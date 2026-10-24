@@ -1,0 +1,9 @@
+# 編譯產物（build_app.sh 產生）
+build/
+
+# macOS
+.DS_Store
+
+# IntelliJ IDEA
+.idea/
+*.iml
