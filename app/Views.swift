@@ -1457,7 +1457,6 @@ struct ScheduleSettings: View {
         case .always: return "加入後馬上處理。"
         case .daily: return "加入的項目會等到每天的開始時間才處理，開始後一路做到佇列做完為止。"
         case .window: return "只在開始～暫停時間之間處理；到暫停時間，進行中的項目做完就停下，隔天開始時間再自動繼續。"
-        case .manual: return "加入的項目不會自動處理，按「立即執行」才開始，做完為止。"
         }
     }
 }

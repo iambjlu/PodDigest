@@ -245,9 +245,9 @@ final class SettingsStore: ObservableObject {
         return s < e ? (m >= s && m < e) : (m >= s || m < e)
     }
 
-    /// 下一次「每天開始時間」（always／manual 沒有排程＝nil）
+    /// 下一次「每天開始時間」（永遠立即執行沒有排程＝nil）
     func nextScheduleStart(after date: Date = Date()) -> Date? {
-        guard scheduleMode == .daily || scheduleMode == .window else { return nil }
+        guard scheduleMode != .always else { return nil }
         let cal = Calendar.current
         let m = Self.minutes(scheduleStart)
         let t = cal.date(bySettingHour: m / 60, minute: m % 60, second: 0, of: date) ?? date
@@ -258,7 +258,6 @@ final class SettingsStore: ObservableObject {
     var scheduleDescription: String {
         switch scheduleMode {
         case .always: return "永遠立即執行"
-        case .manual: return "手動執行"
         case .daily: return "每天 \(scheduleStart) 開始到做完"
         case .window: return "每天 \(scheduleStart)～\(scheduleEnd)"
         }
@@ -386,14 +385,13 @@ final class SettingsStore: ObservableObject {
 
 /// 排程模式：永遠立即／每天自動開始到做完為止／每天自動開始與暫停／手動執行
 enum ScheduleMode: String, CaseIterable, Identifiable {
-    case always, daily, window, manual
+    case always, daily, window
     var id: String { rawValue }
     var label: String {
         switch self {
         case .always: return "永遠立即執行"
         case .daily: return "每天自動開始到做完為止"
         case .window: return "每天自動開始與暫停"
-        case .manual: return "手動執行"
         }
     }
 }

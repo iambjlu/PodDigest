@@ -125,7 +125,7 @@ final class JobQueue: ObservableObject {
     /// 目前為什麼沒在開始新項目（給畫面顯示）
     var holdNote: String {
         if paused { return resumeAt.map { "暫停到下次排程（\(Self.stamp.string(from: $0))）" } ?? "已永久暫停" }
-        if outOfSchedule { return settings.nextScheduleStart().map { "排程外，\(Self.stamp.string(from: $0)) 開始" } ?? "手動執行，按「立即執行」開始" }
+        if outOfSchedule { return settings.nextScheduleStart().map { "排程外，\(Self.stamp.string(from: $0)) 開始" } ?? "排程外" }
         return ""
     }
 
@@ -146,7 +146,6 @@ final class JobQueue: ObservableObject {
         let now = Date()
         switch settings.scheduleMode {
         case .always: outOfSchedule = false; return
-        case .manual: break
         case .daily, .window:
             // 到了今天的開始時間（且今天還沒開過）就開放；daily 一路做到做完，window 到結束時間為止
             let cal = Calendar.current, m = SettingsStore.minutes(settings.scheduleStart)
