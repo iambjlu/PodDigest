@@ -93,8 +93,8 @@ struct WorkbenchView: View {
             return true
         }
         .sheet(item: $pending) { req in
-            AskSheet(request: req, settings: settings, extra: extra) { opts in
-                perform(req, opts)
+            AskSheet(request: req, settings: settings, queue: queue, extra: extra) { opts, groups in
+                perform(req, opts, groups)
             }
         }
         .sheet(item: $pendingMerge) { d in
@@ -317,10 +317,11 @@ struct WorkbenchView: View {
         if settings.askEachTime { pending = r } else { perform(r, queue.options(extra: extra)) }
     }
 
-    private func perform(_ r: AddRequest, _ o: BatchOptions) {
+    private func perform(_ r: AddRequest, _ o: BatchOptions, _ groups: [[RemoteItem]]? = nil) {
         switch r.kind {
         case .files(let urls, let titles): queue.addFiles(urls, o, titles: titles)
-        case .links(let text): queue.addLinks(text, o)
+        case .links(let text):
+            if let groups { queue.addRemote(groups, o) } else { queue.addLinks(text, o) }
         case .merged(let urls, let title): queue.addMerged(urls, title: title, o)
         }
     }
@@ -557,9 +558,14 @@ struct MergeSheet: View {
 struct AskSheet: View {
     let request: AddRequest
     @ObservedObject var settings: SettingsStore
+    @ObservedObject var queue: JobQueue
     let extra: String
-    let onConfirm: (BatchOptions) -> Void
+    let onConfirm: (BatchOptions, [[RemoteItem]]?) -> Void
     @Environment(\.dismiss) private var dismiss
+    @State private var previewTitles: [String] = []     // 預覽：即將加入的標題
+    @State private var groups: [[RemoteItem]]?          // 連結已展開的結果（確認時直接使用）
+    @State private var loading = true
+    @State private var previewErrors: [String] = []
     @State private var genreID = ""
     @State private var detail = DetailLevel.standard
     @State private var formats: Set<OutputFormat> = []
@@ -568,6 +574,7 @@ struct AskSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("加入 \(request.summary)").font(.headline)
+            previewList
             Text("內容類型").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 8)], alignment: .leading, spacing: 8) {
                 ForEach(Genre.all) { g in
@@ -597,14 +604,56 @@ struct AskSheet: View {
                 Button("取消") { dismiss() }.keyboardShortcut(.cancelAction)
                 Button("加入並開始") {
                     settings.genreID = genreID
-                    onConfirm(BatchOptions(genre: Genre.find(genreID), extra: extra, detail: detail, formats: formats))
+                    onConfirm(BatchOptions(genre: Genre.find(genreID), extra: extra, detail: detail, formats: formats), groups)
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)
+                .disabled(loading || (groups != nil && previewTitles.isEmpty))
             }
         }
         .padding(20).frame(width: 520)
         .onAppear { genreID = settings.genreID; detail = settings.detail; formats = settings.formats }
+        .task { await loadPreview() }
+    }
+
+    /// 預覽即將加入的項目（檔案顯示檔名，連結先展開成影片標題；最多列 200 筆）
+    private var previewList: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Text("將加入的項目").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                if loading { ProgressView().controlSize(.small); Text("解析連結中…").font(.caption).foregroundStyle(.secondary) }
+                else { Text("共 \(previewTitles.count) 項").font(.caption).foregroundStyle(.secondary) }
+            }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 3) {
+                    ForEach(Array(previewTitles.prefix(200).enumerated()), id: \.offset) { _, t in
+                        Text("• " + t).font(.callout).lineLimit(1).truncationMode(.middle)
+                    }
+                    if previewTitles.count > 200 { Text("…還有 \(previewTitles.count - 200) 項").font(.caption).foregroundStyle(.secondary) }
+                    ForEach(previewErrors, id: \.self) { Text("⚠️ " + $0).font(.caption).foregroundStyle(.red).lineLimit(2) }
+                    if !loading && previewTitles.isEmpty && previewErrors.isEmpty { Text("沒有可加入的項目").font(.caption).foregroundStyle(.orange) }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxHeight: 130)
+            .padding(8).background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
+        }
+    }
+
+    private func loadPreview() async {
+        switch request.kind {
+        case .files(let urls, let titles):
+            let files = await Task.detached { MediaKinds.collect(urls) }.value
+            previewTitles = files.map { titles[$0] ?? $0.deletingPathExtension().lastPathComponent }
+        case .merged(let urls, let title):
+            previewTitles = ["合併為「\(title)」"] + urls.map { "　" + $0.lastPathComponent }
+        case .links(let text):
+            let r = await queue.expandLinks(text)
+            groups = r.groups
+            previewTitles = r.groups.flatMap { $0.map(\.title) }
+            previewErrors = r.errors
+        }
+        loading = false
     }
 }
 

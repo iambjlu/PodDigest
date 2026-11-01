@@ -204,34 +204,57 @@ final class JobQueue: ObservableObject {
         kick()
     }
 
-    /// 文字框裡每行一個連結（影片或播放清單）；播放清單會展開成多筆
-    func addLinks(_ text: String, _ o: BatchOptions) {
-        let genre = o.genre
-        let links = text.split(whereSeparator: { $0.isNewline || $0 == " " || $0 == "," }).map(String.init).filter(YouTube.looksLikeURL)
-        guard !links.isEmpty else { message = "請貼上以 http(s):// 開頭的連結（一行一個）"; return }
+    /// 文字框裡的連結（一行一個，影片或播放清單）
+    static func parseLinks(_ text: String) -> [String] {
+        text.split(whereSeparator: { $0.isNewline || $0 == " " || $0 == "," }).map(String.init).filter(YouTube.looksLikeURL)
+    }
+
+    /// 把連結展開成影片清單（每個連結一組；播放清單會有多筆）。失敗的連結回報在 errors
+    func expandLinks(_ text: String) async -> (groups: [[RemoteItem]], errors: [String]) {
+        var groups: [[RemoteItem]] = [], errors: [String] = []
+        let cfg = settings.config(extraPrompt: "")
+        for l in Self.parseLinks(text) {
+            do {
+                let items = try await YouTube.expand(l, cfg: cfg)
+                groups.append(items)
+                log("連結展開：\(l) → \(items.count) 部")
+            } catch {
+                errors.append(error.localizedDescription)
+                log("連結失敗：\(l)：\(error.localizedDescription)")
+            }
+        }
+        return (groups, errors)
+    }
+
+    /// 加入已經展開好的影片（預覽確認後呼叫，不用再解析一次）
+    func addRemote(_ groups: [[RemoteItem]], _ o: BatchOptions) {
         let cfg = config(o)
         let custom = settings.customGenrePrompt
+        var added = 0
+        for items in groups {
+            for it in items {
+                let input = JobInput(title: it.title, source: .remote(it.url), genre: o.genre, custom: custom,
+                                     folder: items.count > 1 ? it.playlist : nil)
+                jobs.append(Job(input: input, cfg: cfg))
+                added += 1
+            }
+        }
+        guard added > 0 else { return }
+        message = "已加入 \(added) 部影片"
+        persistSoon()
+        kick()
+    }
+
+    /// 不經預覽直接加入：先解析連結再加入
+    func addLinks(_ text: String, _ o: BatchOptions) {
+        guard !Self.parseLinks(text).isEmpty else { message = "請貼上以 http(s):// 開頭的連結（一行一個）"; return }
         expanding = true
         message = "解析連結中…"
         Task {
-            var added = 0
-            for l in links {
-                do {
-                    let items = try await YouTube.expand(l, cfg: cfg)
-                    for it in items {
-                        let input = JobInput(title: it.title, source: .remote(it.url), genre: genre, custom: custom,
-                                             folder: items.count > 1 ? it.playlist : nil)
-                        jobs.append(Job(input: input, cfg: cfg))
-                        added += 1
-                    }
-                    log("連結展開：\(l) → \(items.count) 部")
-                } catch {
-                    log("連結失敗：\(l)：\(error.localizedDescription)")
-                    message = error.localizedDescription
-                }
-            }
+            let r = await expandLinks(text)
             expanding = false
-            if added > 0 { message = "已加入 \(added) 部影片"; persistSoon(); kick() }
+            if let e = r.errors.last { message = e }
+            addRemote(r.groups, o)
         }
     }
 

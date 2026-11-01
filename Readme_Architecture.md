@@ -72,12 +72,12 @@ PodDigest/
 - **設定** `SettingsView`：STT／LLM 位址模型金鑰、連線測試、輸出、處理方式、同步資料夾、yt-dlp 更新、診斷模式開關。
 - **日誌** `LogView`：顯示 `queue.logs`。
 
-其他視圖：`AskSheet`（每次加入前詢問類型與格式）、`MergeSheet`（多段錄音合併排序）、`VoiceMemosSheet`、`ConvertSheet`（轉換 Markdown）、`HTMLView`（WKWebView 預覽）、`ReadOnlyText`、`MenuContent`（選單列面板）。`AddRequest` 描述一次待確認的加入動作（files／links／merged）。
+其他視圖：`AskSheet`（每次加入前詢問類型與格式；上方先預覽將加入的項目——檔案列檔名、連結先經 `JobQueue.expandLinks` 展開成影片標題，最多列 200 筆；展開完成前「加入並開始」停用，確認時直接用已展開的結果，不再重新解析）、`MergeSheet`（多段錄音合併排序）、`VoiceMemosSheet`、`ConvertSheet`（轉換 Markdown）、`HTMLView`（WKWebView 預覽）、`ReadOnlyText`、`MenuContent`（選單列面板）。`AddRequest` 描述一次待確認的加入動作（files／links／merged）。
 
 ### 3.3 `Jobs.swift`：工作佇列
 - `Job`（`@MainActor ObservableObject`）：一個項目的狀態——`stage`、`progress`、`detail`、`versions`（每「再做一份」多一版，逐字稿共用）、`liveLines`（即時逐字稿，上限 400 行）、`jobLog`（上限 300 行）、`transcript`（分階段模式暫存）。`options` 變動會同步寫入 `OptionsBox`。
 - `JobQueue`：
-  - 加入：`addFiles`（逐檔一項）、`addMerged`（多檔接成一項）、`addLinks`（先用 `YouTube.expand` 展開播放清單，再逐部加入）。
+  - 加入：`addFiles`（逐檔一項）、`addMerged`（多檔接成一項）、連結分兩步：`expandLinks`（用 `YouTube.expand` 展開播放清單）與 `addRemote`（加入已展開的影片）；`addLinks` 是不經預覽時兩步合併的捷徑。
   - 排程：`kick()` 啟動單一 `runner` 迴圈，**一次只處理一個項目**。優先取 `.queued`，沒有才取 `.awaiting`（`phase = .finishOnly`）。
   - `process(_:phase:)`：依 `Phase` 呼叫 `Pipeline`——
     - `.full`：`Pipeline.run`（轉文字 + 整理 + 輸出）
