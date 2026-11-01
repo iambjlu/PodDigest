@@ -621,6 +621,13 @@ struct AskSheet: View {
             }
             if formats.isEmpty { Text("沒有勾選格式時只會顯示在視窗內，不存檔。").font(.caption).foregroundStyle(.orange) }
             HStack {
+                if loading, case .links = request.kind {
+                    Button("略過預覽直接開始") {       // 不等解析：背景解析連結後直接加入
+                        settings.genreID = genreID
+                        onConfirm(BatchOptions(genre: Genre.find(genreID), extra: extra, detail: detail, formats: formats), nil)
+                        dismiss()
+                    }
+                }
                 Spacer()
                 Button("取消") { dismiss() }.keyboardShortcut(.cancelAction)
                 Button("加入並開始") {

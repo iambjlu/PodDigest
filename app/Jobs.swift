@@ -212,15 +212,34 @@ final class JobQueue: ObservableObject {
     /// 把連結展開成影片清單（每個連結一組；播放清單會有多筆）。失敗的連結回報在 errors
     func expandLinks(_ text: String) async -> (groups: [[RemoteItem]], errors: [String]) {
         var groups: [[RemoteItem]] = [], errors: [String] = []
+        var seen = Set<String>()                            // 同一部影片貼了好幾次只留一個
         let cfg = settings.config(extraPrompt: "")
-        for l in Self.parseLinks(text) {
-            do {
-                let items = try await YouTube.expand(l, cfg: cfg)
-                groups.append(items)
-                log("連結展開：\(l) → \(items.count) 部")
-            } catch {
-                errors.append(error.localizedDescription)
-                log("連結失敗：\(l)：\(error.localizedDescription)")
+        var links: [String] = []
+        for l in Self.parseLinks(text) where !links.contains(l) { links.append(l) }
+        // 每次同時解析最多 4 個連結（逐個等很久），結果依原本順序排列
+        for start in stride(from: 0, to: links.count, by: 4) {
+            let batch = Array(links[start..<min(start + 4, links.count)])
+            let results = await withTaskGroup(of: (Int, Result<[RemoteItem], Error>).self) { g -> [(Int, Result<[RemoteItem], Error>)] in
+                for (i, l) in batch.enumerated() {
+                    g.addTask {
+                        do { return (i, .success(try await YouTube.expand(l, cfg: cfg))) }
+                        catch { return (i, .failure(error)) }
+                    }
+                }
+                var out: [(Int, Result<[RemoteItem], Error>)] = []
+                for await r in g { out.append(r) }
+                return out.sorted { $0.0 < $1.0 }
+            }
+            for (i, r) in results {
+                switch r {
+                case .success(let items):
+                    let fresh = items.filter { seen.insert($0.url).inserted }
+                    if !fresh.isEmpty { groups.append(fresh) }
+                    log("連結展開：\(batch[i]) → \(items.count) 部")
+                case .failure(let error):
+                    errors.append(error.localizedDescription)
+                    log("連結失敗：\(batch[i])：\(error.localizedDescription)")
+                }
             }
         }
         return (groups, errors)

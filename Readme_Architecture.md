@@ -72,12 +72,12 @@ PodDigest/
 - **設定** `SettingsView`：STT／LLM 位址模型金鑰、連線測試、輸出、處理方式、同步資料夾、yt-dlp 更新、診斷模式開關。
 - **日誌** `LogView`：顯示 `queue.logs`。
 
-其他視圖：`AskSheet`（每次加入前詢問類型與格式；上方先預覽將加入的項目——檔案列檔名、連結先經 `JobQueue.expandLinks` 展開成影片標題，最多列 200 筆；展開完成前「加入並開始」停用，確認時直接用已展開的結果，不再重新解析）、`MergeSheet`（多段錄音合併排序）、`VoiceMemosSheet`、`ConvertSheet`（轉換 Markdown）、`HTMLView`（WKWebView 預覽）、`ReadOnlyText`、`MenuContent`（選單列面板）。`AddRequest` 描述一次待確認的加入動作（files／links／merged）。
+其他視圖：`AskSheet`（每次加入前詢問類型與格式；上方先預覽將加入的項目——檔案列檔名、連結先經 `JobQueue.expandLinks` 展開成影片標題，最多列 200 筆；展開完成前「加入並開始」停用，確認時直接用已展開的結果，不再重新解析；解析中可按「略過預覽直接開始」，改由背景解析後直接加入）、`MergeSheet`（多段錄音合併排序）、`VoiceMemosSheet`、`ConvertSheet`（轉換 Markdown）、`HTMLView`（WKWebView 預覽）、`ReadOnlyText`、`MenuContent`（選單列面板）。`AddRequest` 描述一次待確認的加入動作（files／links／merged）。
 
 ### 3.3 `Jobs.swift`：工作佇列
 - `Job`（`@MainActor ObservableObject`）：一個項目的狀態——`stage`、`progress`、`detail`、`versions`（每「再做一份」多一版，逐字稿共用）、`liveLines`（即時逐字稿，上限 400 行）、`jobLog`（上限 300 行）、`transcript`（分階段模式暫存）。`options` 變動會同步寫入 `OptionsBox`。
 - `JobQueue`：
-  - 加入：`addFiles`（逐檔一項）、`addMerged`（多檔接成一項）、連結分兩步：`expandLinks`（用 `YouTube.expand` 展開播放清單）與 `addRemote`（加入已展開的影片）；`addLinks` 是不經預覽時兩步合併的捷徑。
+  - 加入：`addFiles`（逐檔一項）、`addMerged`（多檔接成一項）、連結分兩步：`expandLinks`（用 `YouTube.expand` 展開播放清單；連結去重、每批同時解析最多 4 個、重複的影片只留一個）與 `addRemote`（加入已展開的影片）；`addLinks` 是不經預覽時兩步合併的捷徑。
   - 排程：`kick()` 啟動單一 `runner` 迴圈，**一次只處理一個項目**。優先取 `.queued`，沒有才取 `.awaiting`（`phase = .finishOnly`）。
   - `process(_:phase:)`：依 `Phase` 呼叫 `Pipeline`——
     - `.full`：`Pipeline.run`（轉文字 + 整理 + 輸出）
@@ -111,7 +111,7 @@ PodDigest/
 - `MediaKinds.collect`：展開檔案／資料夾（遞迴、略過隱藏檔），只留支援的音訊／影片副檔名，資料夾內依檔名自然排序。
 - `Tool`：尋找與執行外部程式。`find` 的優先順序：設定頁指定路徑 → `~/Library/Application Support/PodDigest/bin`（更新版）→ App 內 `Contents/Resources/bin`（內建版）→ `/opt/homebrew/bin`、`/usr/local/bin`、`~/.local/bin`、`/usr/bin`。`run` 以 `Process` 執行，stdout／stderr 逐行回呼，任務取消時終止行程；輸出文字緩衝超過 20 萬字會截半，避免記憶體無限成長。
 - `AudioPrep.chunks`：用 AVFoundation 讀取，切成 N 分鐘一段、16 kHz 單聲道 AAC（32 kbps）的 m4a；AVFoundation 讀不了的格式退回 `ffmpeg`／`ffprobe`（可選安裝，不內建）。每段獨立編碼，不會把整個檔案載入記憶體。
-- `YouTube`：`expand`（`yt-dlp --flat-playlist --dump-json` 展開成 `RemoteItem`；網址帶 `v=`／`youtu.be/` 一律只處理該支影片，只有純 `playlist?list=` 才展開整份清單）、`download`（抓 `bestaudio[ext=m4a]`，解析 `[download] xx%` 回報進度）、`update`（從 GitHub releases 下載新版到 Application Support）、`version`。
+- `YouTube`：`expand`（`yt-dlp --flat-playlist --print '%(.{id,title,webpage_url,url,playlist_title})j'` 展開成 `RemoteItem`，只印需要的欄位——單支影片的 `--dump-json` 因自動字幕與格式網址可達 60 萬字，會超過外部程式輸出緩衝上限而被截斷、解析失敗；網址帶 `v=`／`youtu.be/` 一律只處理該支影片，只有純 `playlist?list=` 才展開整份清單）、`download`（抓 `bestaudio[ext=m4a]`，解析 `[download] xx%` 回報進度）、`update`（從 GitHub releases 下載新版到 Application Support）、`version`。
 
 ### 3.6 `Net.swift`：外部服務客戶端
 - `Net.session`：`ephemeral` 設定（不寫快取到硬碟），單次請求逾時 1800 秒、整體 7200 秒。

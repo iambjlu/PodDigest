@@ -292,7 +292,9 @@ enum YouTube {
         // 網址帶有影片（v= 或 youtu.be/）就只處理那支影片；只有純播放清單網址（playlist?list=）才展開整份
         let hasList = url.contains("list="), hasVideo = url.contains("v=") || url.contains("youtu.be/")
         let wantPlaylist = hasList && !hasVideo
-        var args = ["--flat-playlist", "--dump-json", "--no-warnings", wantPlaylist ? "--yes-playlist" : "--no-playlist"]
+        // 只印需要的欄位：單支影片的 --dump-json 含全部格式與字幕網址，常超過 60 萬字，會被輸出緩衝上限截斷而解析失敗
+        var args = ["--flat-playlist", "--print", "%(.{id,title,webpage_url,url,playlist_title})j", "--no-warnings",
+                    wantPlaylist ? "--yes-playlist" : "--no-playlist"]
         args += extraArgs(cfg)
         args.append(url)
         let r = try await Tool.run(exe, args)
