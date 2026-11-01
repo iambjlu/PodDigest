@@ -124,7 +124,7 @@ final class JobQueue: ObservableObject {
     }()
     /// 目前為什麼沒在開始新項目（給畫面顯示）
     var holdNote: String {
-        if paused { return resumeAt.map { "暫停到下次排程（\(Self.stamp.string(from: $0))）" } ?? "已永久暫停" }
+        if paused { return resumeAt.map { "暫停到 \(Self.stamp.string(from: $0)) 自動繼續" } ?? "已永久暫停" }
         if outOfSchedule { return settings.nextScheduleStart().map { "排程外，\(Self.stamp.string(from: $0)) 開始" } ?? "排程外" }
         return ""
     }
@@ -499,6 +499,12 @@ final class JobQueue: ObservableObject {
         resumeAt = untilSchedule ? settings.nextScheduleStart() : nil
         paused = true
         log(resumeAt.map { "已暫停到下次排程（\(Self.stamp.string(from: $0))）：進行中的項目做完後不再開始新的" } ?? "已暫停：進行中的項目做完後不再開始新的")
+    }
+    /// 推遲：暫停到指定時間，到點自動繼續（進行中的項目做完後停下）
+    func pause(until date: Date) {
+        resumeAt = date
+        paused = true
+        log("已暫停到 \(Self.stamp.string(from: date))：進行中的項目做完後不再開始新的")
     }
     func resume() { paused = false; resumeAt = nil; log("繼續處理"); kick() }
 

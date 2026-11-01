@@ -1387,6 +1387,7 @@ struct MenuContent: View {
 struct PauseControl: View {
     @ObservedObject var queue: JobQueue
     let prominent: Bool
+    @State private var showDelay = false
 
     var body: some View {
         if queue.paused {
@@ -1398,9 +1399,15 @@ struct PauseControl: View {
                 Button { queue.pause() } label: { Label("永久暫停（手動繼續）", systemImage: "pause.fill") }
                 Button { queue.pause(untilSchedule: true) } label: { Label("暫停到下次排程", systemImage: "calendar.badge.clock") }
                     .disabled(!queue.scheduleEnabled)
+                Divider()
+                ForEach([(30, "30 分鐘"), (60, "1 小時"), (120, "2 小時"), (240, "4 小時")], id: \.0) { m, t in
+                    Button { queue.pause(until: Date().addingTimeInterval(Double(m) * 60)) } label: { Label("推遲 \(t) 後繼續", systemImage: "timer") }
+                }
+                Button { showDelay = true } label: { Label("推遲到指定時間…", systemImage: "clock.arrow.circlepath") }
             } label: { Label("全部暫停", systemImage: "pause.fill") }
             .modifier(PauseStyle(prominent: prominent, color: .orange))
             .fixedSize()
+            .sheet(isPresented: $showDelay) { DelaySheet(queue: queue) }
             .help("暫停：進行中的項目做完後，不再開始新的項目" + (queue.scheduleEnabled ? "" : "（到設定頁開啟排程後，才能選「暫停到下次排程」）"))
         }
     }
@@ -1458,5 +1465,45 @@ struct ScheduleSettings: View {
         case .daily: return "加入的項目會等到每天的開始時間才處理，開始後一路做到佇列做完為止。"
         case .window: return "只在開始～暫停時間之間處理；到暫停時間，進行中的項目做完就停下，隔天開始時間再自動繼續。"
         }
+    }
+}
+
+
+/// 推遲：選「多久之後」或「指定時間」繼續
+struct DelaySheet: View {
+    @ObservedObject var queue: JobQueue
+    @Environment(\.dismiss) private var dismiss
+    @State private var byDuration = true
+    @State private var hours = 1
+    @State private var minutes = 0
+    @State private var at = Date().addingTimeInterval(3600)
+
+    private var target: Date { byDuration ? Date().addingTimeInterval(Double(hours * 60 + minutes) * 60) : at }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("推遲繼續").font(.headline)
+            Picker("", selection: $byDuration) {
+                Text("多久之後").tag(true)
+                Text("指定時間").tag(false)
+            }
+            .pickerStyle(.segmented).labelsHidden()
+            if byDuration {
+                HStack(spacing: 16) {
+                    Stepper("\(hours) 小時", value: $hours, in: 0...48)
+                    Stepper("\(minutes) 分鐘", value: $minutes, in: 0...55, step: 5)
+                }
+            } else {
+                DatePicker("繼續時間", selection: $at, in: Date()..., displayedComponents: [.date, .hourAndMinute])
+            }
+            Text("進行中的項目做完後停下，\(target.formatted(date: .abbreviated, time: .shortened)) 自動繼續。").font(.caption).foregroundStyle(.secondary)
+            HStack {
+                Spacer()
+                Button("取消") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("暫停並推遲") { queue.pause(until: target); dismiss() }
+                    .keyboardShortcut(.defaultAction).disabled(byDuration && hours == 0 && minutes == 0)
+            }
+        }
+        .padding(20).frame(width: 420)
     }
 }
