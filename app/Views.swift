@@ -69,8 +69,9 @@ struct WorkbenchView: View {
         VStack(alignment: .leading, spacing: 12) {
             header
             inputCard
-            HSplitView {
-                jobList.frame(minWidth: 280, idealWidth: 320, maxWidth: 420)
+            HStack(spacing: 0) {       // 固定寬度、分隔線不能拖動
+                jobList.frame(width: 340)
+                Divider().padding(.horizontal, 8)
                 if let job = queue.jobs.first(where: { $0.id == queue.selection }) {
                     JobDetail(job: job, queue: queue).frame(minWidth: 380)
                 } else {
