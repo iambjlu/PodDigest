@@ -110,7 +110,7 @@ PodDigest/
 - `MediaKinds.collect`：展開檔案／資料夾（遞迴、略過隱藏檔），只留支援的音訊／影片副檔名，資料夾內依檔名自然排序。
 - `Tool`：尋找與執行外部程式。`find` 的優先順序：設定頁指定路徑 → `~/Library/Application Support/PodDigest/bin`（更新版）→ App 內 `Contents/Resources/bin`（內建版）→ `/opt/homebrew/bin`、`/usr/local/bin`、`~/.local/bin`、`/usr/bin`。`run` 以 `Process` 執行，stdout／stderr 逐行回呼，任務取消時終止行程；輸出文字緩衝超過 20 萬字會截半，避免記憶體無限成長。
 - `AudioPrep.chunks`：用 AVFoundation 讀取，切成 N 分鐘一段、16 kHz 單聲道 AAC（32 kbps）的 m4a；AVFoundation 讀不了的格式退回 `ffmpeg`／`ffprobe`（可選安裝，不內建）。每段獨立編碼，不會把整個檔案載入記憶體。
-- `YouTube`：`expand`（`yt-dlp --flat-playlist --dump-json` 展開成 `RemoteItem`）、`download`（抓 `bestaudio[ext=m4a]`，解析 `[download] xx%` 回報進度）、`update`（從 GitHub releases 下載新版到 Application Support）、`version`。
+- `YouTube`：`expand`（`yt-dlp --flat-playlist --dump-json` 展開成 `RemoteItem`；網址帶 `v=`／`youtu.be/` 一律只處理該支影片，只有純 `playlist?list=` 才展開整份清單）、`download`（抓 `bestaudio[ext=m4a]`，解析 `[download] xx%` 回報進度）、`update`（從 GitHub releases 下載新版到 Application Support）、`version`。
 
 ### 3.6 `Net.swift`：外部服務客戶端
 - `Net.session`：`ephemeral` 設定（不寫快取到硬碟），單次請求逾時 1800 秒、整體 7200 秒。
@@ -157,7 +157,6 @@ PodDigest/
   - `SettingsFile`：`values`（一般設定）與 `secrets`（只有「API Key 也存到資料夾」開啟才寫）。
   - 變動後延遲 0.8 秒存檔；`reloadIfChanged` 比對檔案修改時間，另一台電腦改過就重新讀取。
   - `keepAudio`（保留下載的音訊）在工作台選項列與設定頁都有核取方塊。
-  - `playlistWhenMixed`（網址同時有影片和清單時處理整份清單）預設關閉；開啟時貼影片＋`list=` 的網址會展開成整份播放清單。
   - `ytdlpPath` 與儲存位置相關欄位每台電腦各自記住，不進同步檔。
   - 環境變數 `PD_STT_URL`、`PD_STT_MODEL`、`PD_LLM_URL`、`PD_LLM_MODEL`、`PD_OUT_DIR` 可覆蓋設定（測試用，不會存起來）。
 

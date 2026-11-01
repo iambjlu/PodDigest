@@ -1121,7 +1121,6 @@ struct SettingsView: View {
                         .font(.caption).foregroundStyle(.secondary).lineLimit(2)
                 }
                 TextField("額外的 yt-dlp 參數（例如 --cookies-from-browser safari）", text: $settings.ytdlpExtraArgs)
-                Toggle("網址同時有影片和清單時，處理整份清單", isOn: $settings.playlistWhenMixed)
                 HStack(spacing: 6) {
                     Text("ffmpeg").font(.callout)
                     StatusPill(text: Tool.find("ffmpeg") != nil ? "已找到" : "未安裝（webm／ogg 等格式需要）",

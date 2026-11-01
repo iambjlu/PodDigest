@@ -289,8 +289,9 @@ enum YouTube {
     /// 把一個連結展開成影片清單（播放清單會展開成多筆，單支影片就一筆）
     static func expand(_ url: String, cfg: PipelineConfig) async throws -> [RemoteItem] {
         let exe = try ytdlp(cfg)
+        // 網址帶有影片（v= 或 youtu.be/）就只處理那支影片；只有純播放清單網址（playlist?list=）才展開整份
         let hasList = url.contains("list="), hasVideo = url.contains("v=") || url.contains("youtu.be/")
-        let wantPlaylist = hasList && (!hasVideo || cfg.playlistWhenMixed)
+        let wantPlaylist = hasList && !hasVideo
         var args = ["--flat-playlist", "--dump-json", "--no-warnings", wantPlaylist ? "--yes-playlist" : "--no-playlist"]
         args += extraArgs(cfg)
         args.append(url)

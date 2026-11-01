@@ -128,7 +128,6 @@ struct PipelineConfig {
     var keepAudio = false
     var ytdlpPath = ""
     var ytdlpExtraArgs = ""
-    var playlistWhenMixed = false
     var keepVideoFolder = true
 }
 
@@ -200,7 +199,6 @@ final class SettingsStore: ObservableObject {
     @Published var keepAudio = false { didSet { changed() } }
     // YouTube
     @Published var ytdlpExtraArgs = "" { didSet { changed() } }
-    @Published var playlistWhenMixed = false { didSet { changed() } }
 
     init() {
         loading = true
@@ -237,8 +235,7 @@ final class SettingsStore: ObservableObject {
          "outputLanguage": outputLanguage, "timestamps": String(timestamps), "customGenrePrompt": customGenrePrompt,
          "outputDir": outputDir.replacingOccurrences(of: NSHomeDirectory(), with: "~"),
          "formats": formats.map(\.rawValue).sorted().joined(separator: ","),
-         "includeTranscript": String(includeTranscript), "keepAudio": String(keepAudio), "askEachTime": String(askEachTime), "batchMode": batchMode.rawValue, "notifyOnFinish": String(notifyOnFinish), "quitWhenDone": String(quitWhenDone), "ytdlpExtraArgs": ytdlpExtraArgs,
-         "playlistWhenMixed": String(playlistWhenMixed)]
+         "includeTranscript": String(includeTranscript), "keepAudio": String(keepAudio), "askEachTime": String(askEachTime), "batchMode": batchMode.rawValue, "notifyOnFinish": String(notifyOnFinish), "quitWhenDone": String(quitWhenDone), "ytdlpExtraArgs": ytdlpExtraArgs]
     }
 
     private func apply(_ v: [String: String]) {
@@ -263,7 +260,7 @@ final class SettingsStore: ObservableObject {
         batchMode = v["batchMode"].flatMap(BatchMode.init(rawValue:)) ?? batchMode
         notifyOnFinish = b("notifyOnFinish", notifyOnFinish)
         quitWhenDone = b("quitWhenDone", quitWhenDone)
-        ytdlpExtraArgs = s("ytdlpExtraArgs", ytdlpExtraArgs); playlistWhenMixed = b("playlistWhenMixed", playlistWhenMixed)
+        ytdlpExtraArgs = s("ytdlpExtraArgs", ytdlpExtraArgs)
     }
 
     /// 依儲存位置載入：同步資料夾有 settings.json 就用它，否則用本機的
@@ -336,7 +333,7 @@ final class SettingsStore: ObservableObject {
         c.detail = detail; c.outputLanguage = outputLanguage; c.timestamps = timestamps
         c.extraPrompt = extraPrompt
         c.outputDir = (outputDir as NSString).expandingTildeInPath; c.formats = formats; c.includeTranscript = includeTranscript; c.keepAudio = keepAudio
-        c.ytdlpPath = ytdlpPath; c.ytdlpExtraArgs = ytdlpExtraArgs; c.playlistWhenMixed = playlistWhenMixed
+        c.ytdlpPath = ytdlpPath; c.ytdlpExtraArgs = ytdlpExtraArgs
         return c
     }
 }
