@@ -106,7 +106,7 @@ PodDigest/
   - 暫存音訊放在 `temporaryDirectory/PodDigest-<UUID>`，`defer` 結束即刪；每段送出後也立刻刪。
 - `finish`：此時才讀 `OptionsBox`；類型為 `auto` 時先 `Summarizer.detect`；`cfg.timestamps` 關閉則 `stripStamp` 去掉時間標記；呼叫 `Summarizer.summarize`；組成 `DigestDoc`（meta：類型、長度、來源、整理時間、語音模型、LLM）；輸出到 `outputDir[/播放清單]/<標題>/`，再 `Exporter.write`。`base` 參數讓進度條從 0.55（完整流程）或 0（再做一份）開始。
 - `cleanStaleTemp`：啟動時（`JobQueue.restore` 一開始、尚未處理任何項目）刪除 `temporaryDirectory` 下殘留的 `PodDigest-*` 暫存資料夾（上次被強制結束時 `defer` 沒機會執行）。
-- 標題：`finish` 的 `title` 參數優先（再做一份沿用上一版，輸出到同一個資料夾）；否則本地來源（`JobSource.isLocal`）且 `cfg.autoTitle` 開啟時，整理完呼叫 `Summarizer.makeTitle` 依重點產生標題（失敗沿用原檔名），作為文件標題與輸出資料夾名稱，`Job.customTitle` 讓佇列顯示新標題。YouTube 影片沿用原標題。
+- 標題：`finish` 的 `title` 參數優先（再做一份沿用上一版，輸出到同一個資料夾）；否則本地來源（`JobSource.isLocal`）且 `cfg.autoTitle` 開啟時，整理完呼叫 `Summarizer.makeTitle` 依重點產生標題（失敗沿用原檔名），作為文件標題與輸出資料夾名稱（格式「新標題（原檔名）」，`Pipeline.withOriginal` 先縮短新標題，確保 80 字上限內原檔名完整留在結尾，方便用原檔名搜尋），`Job.customTitle` 讓佇列顯示新標題。YouTube 影片沿用原標題。
 - `regenerate`：取 `prior.transcript` 呼叫 `finish`，不重新轉文字。
 
 ### 3.5 `Media.swift`：音訊與外部程式
