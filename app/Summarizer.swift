@@ -72,6 +72,26 @@ enum Summarizer {
         return hit?.0 ?? Genre.podcast
     }
 
+    /// 依整理好的重點取一個簡短標題（給本地檔案／語音備忘錄自動重新命名）；失敗回 nil，沿用原名
+    static func makeTitle(original: String, body: String, cfg: PipelineConfig) async -> String? {
+        var c = cfg
+        c.llmTemperature = 0.2
+        let prompt = """
+        下面是一份錄音整理出來的重點（原本的檔名：\(original)）。請為它取一個簡短、具體、能一眼看出內容的標題：
+        - 使用\(cfg.outputLanguage)，20 個字以內
+        - 只輸出標題本身，不要引號、書名號、井字號、句號或任何說明
+        - 不要放日期、檔案副檔名
+
+        ---
+        \(String(body.prefix(2500)))
+        """
+        guard let reply = try? await LLMClient.chat(system: "你是標題產生器，只輸出一行標題。", user: prompt, cfg: c) else { return nil }
+        let firstLine = reply.split(whereSeparator: \.isNewline).map(String.init).first ?? ""
+        let drop = CharacterSet(charactersIn: "#*\"'「」『』《》“”‘’`。 ").union(.whitespacesAndNewlines)
+        let t = firstLine.trimmingCharacters(in: drop)
+        return t.isEmpty ? nil : String(t.prefix(40))
+    }
+
     static func systemPrompt(_ cfg: PipelineConfig, genre: Genre) -> String {
         """
         你是專業的內容整理編輯，擅長把語音逐字稿整理成結構清楚、忠於原文的 Markdown 筆記。

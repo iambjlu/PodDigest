@@ -52,7 +52,8 @@ final class Job: ObservableObject, Identifiable {
     @Published var jobLog: [String] = []                  // 這個項目自己的日誌
     @Published var startedAt: Date?
     @Published var finishedAt: Date?
-    var title: String { input.title }
+    @Published var customTitle: String?                   // 自動命名產生的標題（本地檔案／語音備忘錄）
+    var title: String { customTitle ?? input.title }
     var output: PipelineOutput? { versions.indices.contains(viewing) ? versions[viewing] : versions.last }
 
     init(input: JobInput, cfg: PipelineConfig) {
@@ -349,6 +350,7 @@ final class JobQueue: ObservableObject {
                     out = try await Pipeline.run(job.input, cfg: job.cfg, box: job.box, report: report, log: log, onLines: onLines)
                 }
                 job.transcript = nil
+                if out.doc.title != job.input.title { job.customTitle = out.doc.title }
                 job.versions.append(out)
                 job.viewing = job.versions.count - 1
                 job.stage = .done

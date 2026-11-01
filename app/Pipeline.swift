@@ -6,6 +6,8 @@ enum JobSource {
     case file(URL)
     case files([URL])          // 多段錄音依序接成一份
     case remote(String)
+
+    var isLocal: Bool { if case .remote = self { return false } else { return true } }
 }
 
 enum Stage: String {
@@ -176,11 +178,12 @@ enum Pipeline {
                            report: @escaping Report) async throws -> PipelineOutput {
         let src = prior.doc.meta.first { $0.0 == "來源" }?.1 ?? ""
         return try await finish(input, cfg: cfg, box: box, lines: prior.transcript, duration: prior.duration,
-                                sourceLabel: src, base: 0, report: report)
+                                sourceLabel: src, base: 0, report: report, title: prior.doc.title)
     }
 
     static func finish(_ input: JobInput, cfg: PipelineConfig, box: OptionsBox, lines: [String], duration: Double,
-                               sourceLabel: String, base: Double, report: @escaping Report) async throws -> PipelineOutput {
+                               sourceLabel: String, base: Double, report: @escaping Report,
+                               title: String? = nil) async throws -> PipelineOutput {
         // 4) 整理重點（這時才讀目前的類型／詳細程度／額外要求）
         var o = box.get()
         var c = cfg
@@ -197,17 +200,24 @@ enum Pipeline {
             report(.summarizing, base + (0.95 - base) * f, msg)
         }
 
+        // 標題：沿用指定的（再做一份時沿用上一版）；本地檔案／語音備忘錄開了「自動命名」就請 LLM 依內容取一個
+        var docTitle = title ?? input.title
+        if title == nil, cfg.autoTitle, input.source.isLocal {
+            report(.summarizing, 0.94, "產生標題…")
+            if let t = await Summarizer.makeTitle(original: input.title, body: body, cfg: c) { docTitle = t }
+        }
+
         // 5) 輸出（這時才讀輸出格式）
         report(.exporting, 0.95, "輸出檔案…")
         let o2 = box.get()
         let df = DateFormatter(); df.dateFormat = "yyyy-MM-dd HH:mm"
         let doc = DigestDoc(
-            title: input.title,
+            title: docTitle,
             meta: [("類型", o.genre.name + autoNote), ("長度", Summarizer.mmss(duration)),
                    ("來源", sourceLabel), ("整理時間", df.string(from: Date())),
                    ("語音模型", cfg.sttModel), ("LLM", cfg.llmModel.isEmpty ? "（伺服器預設）" : cfg.llmModel)],
             body: body, transcript: lines, includeTranscript: cfg.includeTranscript)
-        let dir = outputDir(input, cfg)
+        let dir = outputDir(input, cfg, title: docTitle)
         let files = try await Exporter.write(doc, formats: o2.formats, dir: dir)
         report(.done, 1, "完成")
         return PipelineOutput(transcript: lines, body: body, duration: duration, files: files, doc: doc)
@@ -221,10 +231,10 @@ enum Pipeline {
     }
 
     /// 輸出資料夾：[播放清單/]標題（每個音檔一個子資料夾，檔案不會散在一起）
-    static func outputDir(_ input: JobInput, _ cfg: PipelineConfig) -> URL {
+    static func outputDir(_ input: JobInput, _ cfg: PipelineConfig, title: String? = nil) -> URL {
         var dir = URL(fileURLWithPath: (cfg.outputDir as NSString).expandingTildeInPath)
         if let f = input.folder, !f.isEmpty { dir.appendPathComponent(Exporter.safeName(f)) }
-        return dir.appendingPathComponent(Exporter.safeName(input.title))
+        return dir.appendingPathComponent(Exporter.safeName(title ?? input.title))
     }
 
     static func stripStamp(_ s: String) -> String {
