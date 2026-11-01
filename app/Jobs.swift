@@ -95,7 +95,9 @@ final class JobQueue: ObservableObject {
     @Published var selection: UUID?
     @Published var paused = false { didSet { savePause() } }       // 全域暫停：不再開始新項目（進行中的做完）
     @Published var resumeAt: Date? { didSet { savePause() } }       // 「暫停到下次排程」：到這個時間自動繼續；nil＝永久暫停
-    @Published var outOfSchedule = false                            // 不在排程時段內（開了排程才會為真）
+    @Published var outOfSchedule = false                            // 排程還沒開放（等開始時間或手動執行）
+    private var latched = false                                     // 「到點開始／立即執行」後一路做到佇列做完
+    private var lastOpenDay = Calendar.current.startOfDay(for: Date())
     private var clock: Timer?
     @Published var checked = Set<UUID>() // 清單左邊核取方塊勾選的項目（批量刪除用）
     @Published var lingering = false     // 做完後視窗已關、App 留在選單列待命
@@ -116,14 +118,14 @@ final class JobQueue: ObservableObject {
 
     /// 暫停或排程外：不開始新項目
     var held: Bool { paused || outOfSchedule }
-    var scheduleEnabled: Bool { settings.scheduleEnabled }
+    var scheduleEnabled: Bool { settings.nextScheduleStart() != nil }       // 有「每天開始時間」才能暫停到下次排程
     private static let stamp: DateFormatter = {
         let f = DateFormatter(); f.dateFormat = "M/d HH:mm"; return f
     }()
     /// 目前為什麼沒在開始新項目（給畫面顯示）
     var holdNote: String {
         if paused { return resumeAt.map { "暫停到下次排程（\(Self.stamp.string(from: $0))）" } ?? "已永久暫停" }
-        if outOfSchedule { return settings.nextScheduleStart().map { "排程外，\(Self.stamp.string(from: $0)) 開始" } ?? "排程外" }
+        if outOfSchedule { return settings.nextScheduleStart().map { "排程外，\(Self.stamp.string(from: $0)) 開始" } ?? "手動執行，按「立即執行」開始" }
         return ""
     }
 
@@ -140,7 +142,31 @@ final class JobQueue: ObservableObject {
         if !held, runner == nil, jobs.contains(where: { $0.stage.pending }) { kick() }
     }
 
-    func refreshSchedule() { outOfSchedule = !settings.inSchedule() }
+    func refreshSchedule() {
+        let now = Date()
+        switch settings.scheduleMode {
+        case .always: outOfSchedule = false; return
+        case .manual: break
+        case .daily, .window:
+            // 到了今天的開始時間（且今天還沒開過）就開放；daily 一路做到做完，window 到結束時間為止
+            let cal = Calendar.current, m = SettingsStore.minutes(settings.scheduleStart)
+            if let t = cal.date(bySettingHour: m / 60, minute: m % 60, second: 0, of: now), now >= t, lastOpenDay < cal.startOfDay(for: now) {
+                lastOpenDay = cal.startOfDay(for: now); latched = true
+            }
+        }
+        if latched && !jobs.contains(where: { $0.stage.pending || $0.stage.running }) { latched = false }   // 做完就收工
+        let open = latched || (settings.scheduleMode == .window && settings.inWindow(now))
+        if settings.scheduleMode == .window, latched, !settings.inWindow(now), !runNowActive { latched = false }
+        outOfSchedule = !open && !latched
+    }
+
+    private var runNowActive = false
+    /// 不等排程，現在就開始（做到佇列做完；暫停中則一併繼續）
+    func runNow() {
+        runNowActive = true; latched = true
+        refreshSchedule()
+        if paused { resume() } else { kick() }
+    }
 
     /// 整體進度（0…1）：未完成的項目加上已完成的，給選單列顯示
     var overallProgress: Double {
@@ -362,6 +388,7 @@ final class JobQueue: ObservableObject {
             guard let self else { return }
             self.runner = nil
             self.persistNow()
+            self.runNowActive = false
             if self.held { return }         // 暫停／排程外不算做完，不觸發完成通知／自動結束
             self.onFinished?(self.runDone, self.runFailed)
         }

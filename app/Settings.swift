@@ -193,11 +193,10 @@ final class SettingsStore: ObservableObject {
     @Published var batchMode = BatchMode.perItem { didSet { changed() } }
     @Published var notifyOnFinish = true { didSet { changed() } }
     @Published var quitWhenDone = false { didSet { changed() } }
-    // 排程：只在指定時段處理（開始大於結束＝跨午夜）；星期用 Calendar 的 1=週日…7=週六
-    @Published var scheduleEnabled = false { didSet { changed() } }
-    @Published var scheduleStart = 23 * 60 { didSet { changed() } }
-    @Published var scheduleEnd = 7 * 60 { didSet { changed() } }
-    @Published var scheduleDays: Set<Int> = [1, 2, 3, 4, 5, 6, 7] { didSet { changed() } }
+    // 排程（模式與時間欄位的設計同 InboxRelay）
+    @Published var scheduleMode = ScheduleMode.always { didSet { changed() } }
+    @Published var scheduleStart = "03:30" { didSet { changed() } }     // HH:mm
+    @Published var scheduleEnd = "08:00" { didSet { changed() } }
     // 輸出
     @Published var outputDir = "~/Documents/PodDigest" { didSet { changed() } }
     @Published var formats: Set<OutputFormat> = [.md, .html] { didSet { changed() } }
@@ -232,31 +231,37 @@ final class SettingsStore: ObservableObject {
 
     // MARK: 排程
 
-    /// 這個時間點是否在排程時段內（沒開排程＝一律可以處理）
-    func inSchedule(_ date: Date = Date()) -> Bool {
-        guard scheduleEnabled else { return true }
-        let cal = Calendar.current
-        let c = cal.dateComponents([.hour, .minute, .weekday], from: date)
-        let m = (c.hour ?? 0) * 60 + (c.minute ?? 0)
-        let today = c.weekday ?? 1
-        let yesterday = today == 1 ? 7 : today - 1
-        if scheduleStart == scheduleEnd { return scheduleDays.contains(today) }
-        if scheduleStart < scheduleEnd { return scheduleDays.contains(today) && m >= scheduleStart && m < scheduleEnd }
-        return (m >= scheduleStart && scheduleDays.contains(today)) || (m < scheduleEnd && scheduleDays.contains(yesterday))
+    static func minutes(_ hhmm: String) -> Int {
+        let p = hhmm.split(separator: ":").compactMap { Int($0) }
+        return (p.first ?? 0) * 60 + (p.count > 1 ? p[1] : 0)
     }
 
-    /// 下一次排程開始的時間（沒開排程或沒勾任何星期＝nil）
+    /// window 模式：現在是否在開始～結束之間（結束早於開始＝跨午夜）
+    func inWindow(_ date: Date = Date()) -> Bool {
+        let c = Calendar.current.dateComponents([.hour, .minute], from: date)
+        let m = (c.hour ?? 0) * 60 + (c.minute ?? 0)
+        let s = Self.minutes(scheduleStart), e = Self.minutes(scheduleEnd)
+        if s == e { return true }
+        return s < e ? (m >= s && m < e) : (m >= s || m < e)
+    }
+
+    /// 下一次「每天開始時間」（always／manual 沒有排程＝nil）
     func nextScheduleStart(after date: Date = Date()) -> Date? {
-        guard scheduleEnabled, !scheduleDays.isEmpty else { return nil }
+        guard scheduleMode == .daily || scheduleMode == .window else { return nil }
         let cal = Calendar.current
-        let day0 = cal.startOfDay(for: date)
-        for d in 0...8 {
-            guard let day = cal.date(byAdding: .day, value: d, to: day0),
-                  let t = cal.date(byAdding: .minute, value: scheduleStart, to: day), t > date,
-                  scheduleDays.contains(cal.component(.weekday, from: t)) else { continue }
-            return t
+        let m = Self.minutes(scheduleStart)
+        let t = cal.date(bySettingHour: m / 60, minute: m % 60, second: 0, of: date) ?? date
+        return t > date ? t : cal.date(byAdding: .day, value: 1, to: t)
+    }
+
+    /// 這個排程模式的一句話說明（設定頁與畫面顯示用）
+    var scheduleDescription: String {
+        switch scheduleMode {
+        case .always: return "永遠立即執行"
+        case .manual: return "手動執行"
+        case .daily: return "每天 \(scheduleStart) 開始到做完"
+        case .window: return "每天 \(scheduleStart)～\(scheduleEnd)"
         }
-        return nil
     }
 
     // MARK: 讀取與儲存
@@ -271,7 +276,7 @@ final class SettingsStore: ObservableObject {
          "outputLanguage": outputLanguage, "timestamps": String(timestamps), "customGenrePrompt": customGenrePrompt,
          "outputDir": outputDir.replacingOccurrences(of: NSHomeDirectory(), with: "~"),
          "formats": formats.map(\.rawValue).sorted().joined(separator: ","),
-         "includeTranscript": String(includeTranscript), "keepAudio": String(keepAudio), "autoTitle": String(autoTitle), "askEachTime": String(askEachTime), "batchMode": batchMode.rawValue, "notifyOnFinish": String(notifyOnFinish), "quitWhenDone": String(quitWhenDone), "scheduleEnabled": String(scheduleEnabled), "scheduleStart": String(scheduleStart), "scheduleEnd": String(scheduleEnd), "scheduleDays": scheduleDays.sorted().map(String.init).joined(separator: ","), "ytdlpExtraArgs": ytdlpExtraArgs]
+         "includeTranscript": String(includeTranscript), "keepAudio": String(keepAudio), "autoTitle": String(autoTitle), "askEachTime": String(askEachTime), "batchMode": batchMode.rawValue, "notifyOnFinish": String(notifyOnFinish), "quitWhenDone": String(quitWhenDone), "scheduleMode": scheduleMode.rawValue, "scheduleStart": scheduleStart, "scheduleEnd": scheduleEnd, "ytdlpExtraArgs": ytdlpExtraArgs]
     }
 
     private func apply(_ v: [String: String]) {
@@ -297,10 +302,9 @@ final class SettingsStore: ObservableObject {
         batchMode = v["batchMode"].flatMap(BatchMode.init(rawValue:)) ?? batchMode
         notifyOnFinish = b("notifyOnFinish", notifyOnFinish)
         quitWhenDone = b("quitWhenDone", quitWhenDone)
-        scheduleEnabled = b("scheduleEnabled", scheduleEnabled)
-        scheduleStart = v["scheduleStart"].flatMap(Int.init) ?? scheduleStart
-        scheduleEnd = v["scheduleEnd"].flatMap(Int.init) ?? scheduleEnd
-        if let d = v["scheduleDays"] { scheduleDays = Set(d.split(separator: ",").compactMap { Int($0) }) }
+        scheduleMode = v["scheduleMode"].flatMap(ScheduleMode.init(rawValue:)) ?? scheduleMode
+        scheduleStart = s("scheduleStart", scheduleStart)
+        scheduleEnd = s("scheduleEnd", scheduleEnd)
         ytdlpExtraArgs = s("ytdlpExtraArgs", ytdlpExtraArgs)
     }
 
@@ -376,5 +380,20 @@ final class SettingsStore: ObservableObject {
         c.outputDir = (outputDir as NSString).expandingTildeInPath; c.formats = formats; c.includeTranscript = includeTranscript; c.keepAudio = keepAudio; c.autoTitle = autoTitle
         c.ytdlpPath = ytdlpPath; c.ytdlpExtraArgs = ytdlpExtraArgs
         return c
+    }
+}
+
+
+/// 排程模式：永遠立即／每天自動開始到做完為止／每天自動開始與暫停／手動執行
+enum ScheduleMode: String, CaseIterable, Identifiable {
+    case always, daily, window, manual
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .always: return "永遠立即執行"
+        case .daily: return "每天自動開始到做完為止"
+        case .window: return "每天自動開始與暫停"
+        case .manual: return "手動執行"
+        }
     }
 }

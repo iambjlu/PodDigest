@@ -136,6 +136,10 @@ struct WorkbenchView: View {
             if queue.isBusy || queue.pending > 0 || queue.paused {
                 PauseControl(queue: queue, prominent: true)
             }
+            if queue.outOfSchedule && !queue.paused && (queue.pending > 0 || queue.isBusy) {
+                Button { queue.runNow() } label: { Label("立即執行", systemImage: "bolt.fill") }
+                    .buttonStyle(.bordered).controlSize(.small).help("不等排程，現在就開始處理，做完為止")
+            }
             if queue.held {
                 StatusPill(text: (queue.isBusy ? "本項完成後停下 · " : "") + queue.holdNote + " · \(queue.pending) 個等待", color: .orange)
             } else if queue.isBusy {
@@ -1173,7 +1177,7 @@ struct SettingsView: View {
                 }
             }
             Section("排程") {
-                ScheduleSettings(settings: settings)
+                ScheduleSettings(settings: settings, queue: queue)
             }
             Section("輸出") {
                 HStack {
@@ -1411,38 +1415,49 @@ private struct PauseStyle: ViewModifier {
     }
 }
 
-/// 設定頁：只在指定時段處理
+/// 設定頁：排程（四種模式，時間欄位依模式顯示）
 struct ScheduleSettings: View {
     @ObservedObject var settings: SettingsStore
-    private static let dayNames = [(2, "一"), (3, "二"), (4, "三"), (5, "四"), (6, "五"), (7, "六"), (1, "日")]
+    @ObservedObject var queue: JobQueue
 
-    private func time(_ minutes: Binding<Int>) -> Binding<Date> {
-        Binding(get: { Calendar.current.date(bySettingHour: minutes.wrappedValue / 60, minute: minutes.wrappedValue % 60, second: 0, of: Date()) ?? Date() },
-                set: { let c = Calendar.current.dateComponents([.hour, .minute], from: $0); minutes.wrappedValue = (c.hour ?? 0) * 60 + (c.minute ?? 0) })
+    private func time(_ text: Binding<String>) -> Binding<Date> {
+        Binding(get: {
+            let m = SettingsStore.minutes(text.wrappedValue)
+            return Calendar.current.date(bySettingHour: m / 60, minute: m % 60, second: 0, of: Date()) ?? Date()
+        }, set: {
+            let c = Calendar.current.dateComponents([.hour, .minute], from: $0)
+            text.wrappedValue = String(format: "%02d:%02d", c.hour ?? 0, c.minute ?? 0)
+        })
     }
 
     var body: some View {
-        Toggle("只在指定時段處理", isOn: $settings.scheduleEnabled)
-            .help("開啟後，只有在下列時段才會開始處理項目；時段結束時，進行中的項目做完就停下，下個時段再自動繼續。")
-        if settings.scheduleEnabled {
-            HStack {
-                DatePicker("開始", selection: time($settings.scheduleStart), displayedComponents: .hourAndMinute)
-                DatePicker("結束", selection: time($settings.scheduleEnd), displayedComponents: .hourAndMinute)
-                if settings.scheduleStart > settings.scheduleEnd { Text("（跨午夜）").font(.caption).foregroundStyle(.secondary) }
+        Picker("處理時間", selection: $settings.scheduleMode) {
+            ForEach(ScheduleMode.allCases) { Text($0.label).tag($0) }
+        }
+        if settings.scheduleMode == .daily || settings.scheduleMode == .window {
+            DatePicker("開始時間", selection: time($settings.scheduleStart), displayedComponents: .hourAndMinute)
+        }
+        if settings.scheduleMode == .window {
+            DatePicker("暫停時間", selection: time($settings.scheduleEnd), displayedComponents: .hourAndMinute)
+        }
+        HStack(spacing: 8) {
+            Image(systemName: queue.outOfSchedule ? "clock.badge.pause" : "clock").foregroundStyle(queue.outOfSchedule ? .orange : .secondary)
+            Text(queue.outOfSchedule ? queue.holdNote : settings.scheduleDescription).font(.caption).foregroundStyle(.secondary)
+            Spacer()
+            if queue.outOfSchedule {
+                Button("立即執行") { queue.runNow() }.disabled(queue.pending == 0 && !queue.isBusy)
+                    .help("不等排程，現在就開始處理排隊中的項目，做完為止")
             }
-            HStack(spacing: 6) {
-                Text("星期").font(.callout)
-                ForEach(Self.dayNames, id: \.0) { d in
-                    let on = settings.scheduleDays.contains(d.0)
-                    Button { if on { settings.scheduleDays.remove(d.0) } else { settings.scheduleDays.insert(d.0) } } label: {
-                        Text(d.1).font(.caption.weight(.medium)).frame(width: 24, height: 22)
-                            .background(on ? Color.accentColor.opacity(0.18) : Color.primary.opacity(0.06), in: Circle())
-                            .overlay(Circle().strokeBorder(on ? Color.accentColor : .clear))
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            if settings.scheduleDays.isEmpty { Text("沒有勾選任何星期，等於永遠不會處理。").font(.caption).foregroundStyle(.orange) }
+        }
+        Text(helpText).font(.caption).foregroundStyle(.secondary)
+    }
+
+    private var helpText: String {
+        switch settings.scheduleMode {
+        case .always: return "加入後馬上處理。"
+        case .daily: return "加入的項目會等到每天的開始時間才處理，開始後一路做到佇列做完為止。"
+        case .window: return "只在開始～暫停時間之間處理；到暫停時間，進行中的項目做完就停下，隔天開始時間再自動繼續。"
+        case .manual: return "加入的項目不會自動處理，按「立即執行」才開始，做完為止。"
         }
     }
 }
