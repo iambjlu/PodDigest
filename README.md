@@ -2,6 +2,8 @@
 
 把音訊與 YouTube 影片整理成重點的原生 SwiftUI Mac App（macOS 14+）。語音模型與 LLM 都是**外部**的 OpenAI 相容服務（本機或雲端皆可）。
 
+![PodDigest 工作台](docs/screenshot.png)
+
 ## 使用
 1. `./build_app.sh` 編譯（產生 `build/PodDigest.app`），或 `./install_app.sh` 編譯並安裝到 /Applications。
 2. 「設定」頁填語音轉文字與 LLM 的網址／模型／API Key，按「測試連線並取得模型清單」。
