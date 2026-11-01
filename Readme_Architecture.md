@@ -68,7 +68,7 @@ PodDigest/
 
 ### 3.2 `Views.swift`：介面
 `MainWindow` 是三個分頁：
-- **工作台** `WorkbenchView`：加入來源（拖放、檔案選擇、語音備忘錄、YouTube 連結）、內容類型／詳細程度／輸出格式選擇、佇列清單（`JobRow`，左邊有核取方塊；標題列有全選、刪除選取、暫停／繼續，清單按 Delete 鍵刪除勾選項，沒勾選則刪目前選取的）、右側 `JobDetail`（結果預覽、版本切換、即時逐字稿 `LiveView`、`OptionsEditor` 可在做完前改設定）。
+- **工作台** `WorkbenchView`：加入來源（拖放、檔案選擇、語音備忘錄、YouTube 連結）、內容類型／詳細程度／輸出格式選擇、連結輸入框可用右側按鈕展開成多行編輯框（Return 換行、按「加入」送出）或收合回單行，佇列清單（`JobRow`，左邊有核取方塊；標題列有全選、刪除選取、暫停／繼續，清單按 Delete 鍵刪除勾選項，沒勾選則刪目前選取的）、右側 `JobDetail`（結果預覽、版本切換、即時逐字稿 `LiveView`、`OptionsEditor` 可在做完前改設定）。
 - **設定** `SettingsView`：STT／LLM 位址模型金鑰、連線測試、輸出、處理方式、同步資料夾、yt-dlp 更新、診斷模式開關。
 - **日誌** `LogView`：顯示 `queue.logs`。
 

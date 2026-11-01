@@ -56,6 +56,7 @@ struct WorkbenchView: View {
     @ObservedObject var queue: JobQueue
     @ObservedObject var settings: SettingsStore
     @State private var links = ""
+    @State private var linksExpanded = false
     @State private var extra = ""
     @State private var targeted = false
     @State private var pending: AddRequest?
@@ -215,10 +216,30 @@ struct WorkbenchView: View {
                 }
                 Divider().frame(height: 52)
                 VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        TextField("貼上 YouTube 影片或播放清單連結（多個用空白或換行分開）", text: $links, axis: .vertical)
-                            .lineLimit(1...3).textFieldStyle(.roundedBorder)
-                            .onSubmit { addLinks() }
+                    HStack(alignment: .top) {
+                        if linksExpanded {
+                            // 展開：大輸入框，Return 換行（一行一個連結），按「加入」送出
+                            TextEditor(text: $links)
+                                .font(.body).scrollContentBackground(.hidden)
+                                .padding(4).frame(height: 150)
+                                .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
+                                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.primary.opacity(0.15)))
+                                .overlay(alignment: .topLeading) {
+                                    if links.isEmpty {
+                                        Text("貼上 YouTube 影片或播放清單連結（一行一個）").foregroundStyle(.tertiary)
+                                            .padding(.horizontal, 9).padding(.vertical, 4).allowsHitTesting(false)
+                                    }
+                                }
+                        } else {
+                            TextField("貼上 YouTube 影片或播放清單連結（多個用空白或換行分開）", text: $links, axis: .vertical)
+                                .lineLimit(1...3).textFieldStyle(.roundedBorder)
+                                .onSubmit { addLinks() }
+                        }
+                        Button { linksExpanded.toggle() } label: {
+                            Image(systemName: linksExpanded ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
+                                .frame(width: 22, height: 22)
+                        }
+                        .buttonStyle(.borderless).help(linksExpanded ? "收合輸入框" : "展開輸入框（貼上很多連結時比較好看）")
                         Button { addLinks() } label: { Label("加入", systemImage: "plus.circle.fill") }
                             .disabled(links.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || queue.expanding)
                     }
