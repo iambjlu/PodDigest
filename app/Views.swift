@@ -1397,8 +1397,9 @@ struct PauseControl: View {
         }
         Button { queue.pause() } label: { Label(queue.paused ? "改為：暫停（手動繼續）" : "暫停", systemImage: "pause.fill") }
         Button { queue.pause(onNextLaunch: true) } label: { Label("暫停：下次打開 App 時繼續", systemImage: "power") }
-        Button { if let t = queue.nextScheduleStart { queue.pause(until: t) } } label: { Label("暫停：下次排程時間繼續", systemImage: "calendar.badge.clock") }
-            .disabled(queue.nextScheduleStart == nil)
+        if let t = queue.nextScheduleStart {       // 沒設定排程時整項不出現
+            Button { queue.pause(until: t) } label: { Label("暫停：下次排程時間繼續", systemImage: "calendar.badge.clock") }
+        }
         Button { delayMode = true; showDelay = true } label: { Label("暫停：一段時間…", systemImage: "timer") }
         Button { delayMode = false; showDelay = true } label: { Label("暫停：到指定時間繼續…", systemImage: "clock.arrow.circlepath") }
     }
@@ -1413,7 +1414,7 @@ struct PauseControl: View {
             } else {
                 Menu { items } label: { Label("全部暫停", systemImage: "pause.fill") }
                     .modifier(PauseStyle(prominent: prominent, color: .orange))
-                    .help("暫停：進行中的項目做完後，不再開始新的項目" + (queue.nextScheduleStart != nil ? "" : "（設定頁排程選「每天自動開始…」後，才能選「暫停：下次排程時間繼續」）"))
+                    .help("暫停：進行中的項目做完後，不再開始新的項目")
             }
         }
         .frame(width: prominent ? 112 : nil)        // 固定寬度：不隨文字或左邊標籤長度跳動
