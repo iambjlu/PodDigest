@@ -63,6 +63,11 @@ enum Tool {
     /// 執行外部程式。onLine 會逐行收到 stdout／stderr；工作被取消時會終止行程。
     @discardableResult
     static func run(_ exe: String, _ args: [String], onLine: (@Sendable (String) -> Void)? = nil) async throws -> (status: Int32, out: String) {
+        // 全域暫停時終止行程，繼續後重新執行（yt-dlp 會從已下載的部分續傳）
+        try await PauseGate.interruptible { try await runOnce(exe, args, onLine: onLine) }
+    }
+
+    private static func runOnce(_ exe: String, _ args: [String], onLine: (@Sendable (String) -> Void)?) async throws -> (status: Int32, out: String) {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: exe)
         p.arguments = args
@@ -317,7 +322,7 @@ enum YouTube {
     /// 下載音訊到 dir，回傳檔案路徑。progress 為 0…1
     static func download(_ url: String, to dir: URL, cfg: PipelineConfig, progress: @escaping @Sendable (Double) -> Void) async throws -> URL {
         let exe = try ytdlp(cfg)
-        var args = ["--no-playlist", "--no-warnings", "--newline", "--no-part",
+        var args = ["--no-playlist", "--no-warnings", "--newline", "--continue",
                     "-f", "bestaudio[ext=m4a]/bestaudio/best", "-o", dir.path + "/yt.%(ext)s"]
         if let ffmpeg = Tool.find("ffmpeg") {
             args += ["--ffmpeg-location", (ffmpeg as NSString).deletingLastPathComponent]

@@ -50,9 +50,9 @@ enum Net {
     static func send(_ req: URLRequest, retries: Int = 3) async throws -> (Data, HTTPURLResponse) {
         var lastErr: Error = AppError("未知錯誤")
         for attempt in 0..<retries {
-            try Task.checkCancellation()
             do {
-                let (data, resp) = try await session.data(for: req)
+                // 暫停時立刻中斷這個連線，繼續後重新送出同一個請求（不算一次重試）
+                let (data, resp) = try await PauseGate.interruptible { try await session.data(for: req) }
                 guard let http = resp as? HTTPURLResponse else { throw AppError("伺服器回應異常") }
                 if (http.statusCode == 429 || http.statusCode >= 500) && attempt < retries - 1 {
                     lastErr = AppError(apiError(data, http.statusCode))
@@ -217,5 +217,47 @@ enum LLMClient {
         }
         if let r = t.range(of: "</think>") { t = String(t[r.upperBound...]) }   // 只有結尾標籤的情況
         return t.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+
+/// 全域暫停閘門：暫停時立刻中斷進行中的連線（語音轉文字、LLM）與外部程式（yt-dlp、ffmpeg），
+/// 在原地等待；繼續後從那一步重做（下載會續傳），已完成的步驟與進度不會丟。
+enum PauseGate {
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var held = false
+    static var isPaused: Bool { lock.lock(); defer { lock.unlock() }; return held }
+    static func set(_ v: Bool) { lock.lock(); held = v; lock.unlock() }
+
+    static func checkpoint() async throws {
+        try Task.checkCancellation()
+        while isPaused {
+            try await Task.sleep(nanoseconds: 300_000_000)
+        }
+    }
+
+    private final class Flag: @unchecked Sendable {
+        private let lock = NSLock(); private var v = false
+        func set() { lock.lock(); v = true; lock.unlock() }
+        var isSet: Bool { lock.lock(); defer { lock.unlock() }; return v }
+    }
+
+    /// 執行 op；執行中若被暫停就取消它（連線中斷／行程終止），等繼續後整個重做。
+    static func interruptible<T: Sendable>(_ op: @escaping @Sendable () async throws -> T) async throws -> T {
+        while true {
+            try await checkpoint()
+            let flag = Flag()
+            let work = Task { try await op() }
+            let watcher = Task {
+                while !Task.isCancelled {
+                    if isPaused { flag.set(); work.cancel(); return }
+                    try? await Task.sleep(nanoseconds: 150_000_000)
+                }
+            }
+            let result = await withTaskCancellationHandler { await work.result } onCancel: { work.cancel() }
+            watcher.cancel()
+            if flag.isSet && !Task.isCancelled { continue }      // 因暫停而中斷：丟掉結果，繼續後重做
+            return try result.get()
+        }
     }
 }

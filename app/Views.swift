@@ -138,7 +138,7 @@ struct WorkbenchView: View {
                     .buttonStyle(.bordered).controlSize(.small).help("不等排程，現在就開始處理，做完為止")
             }
             if queue.held {
-                StatusPill(text: (queue.isBusy ? "本項完成後停下 · " : "") + queue.holdNote + " · \(queue.pending) 個等待", color: .orange)
+                StatusPill(text: (queue.isBusy && !queue.paused ? "本項完成後停下 · " : "") + queue.holdNote + " · \(queue.pending) 個等待", color: .orange)
             } else if queue.isBusy {
                 StatusPill(text: "處理中 · 還有 \(queue.pending) 個排隊", color: .purple)
             } else if queue.pending > 0 {
@@ -778,7 +778,7 @@ struct JobRow: View {
                 }
                 if job.stage.running {
                     ProgressView(value: min(max(job.progress, 0), 1)).tint(tint)
-                    Text(paused ? (queue.paused ? "暫停中" : "排程外") + "・本項完成後停下" + (job.detail.isEmpty ? "" : "（\(job.detail)）") : job.detail)
+                    Text(paused ? (queue.paused ? "已暫停・繼續後從這一步接著做" : "排程外・本項完成後停下") + (job.detail.isEmpty ? "" : "（\(job.detail)）") : job.detail)
                         .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 } else if job.stage == .failed {
                     Text(job.error).font(.caption).foregroundStyle(.red).lineLimit(2)
@@ -951,7 +951,7 @@ struct LiveView: View {
                 if job.stage.running {
                     ProgressView(value: min(max(job.progress, 0), 1)).tint(queue.held ? .orange : nil)
                     if queue.held {
-                        Label("\(queue.holdNote)：這個項目做完後就會停下，不會開始新的項目。", systemImage: "pause.circle.fill")
+                        Label(queue.paused ? "\(queue.holdNote)：已中斷下載與模型連線，繼續後從這一步接著做。" : "\(queue.holdNote)：這個項目做完後就會停下，不會開始新的項目。", systemImage: "pause.circle.fill")
                             .font(.caption).foregroundStyle(.orange)
                     }
                     HStack {
@@ -1357,7 +1357,7 @@ struct MenuContent: View {
                         Text("\(Int(min(max(job.progress, 0), 1) * 100))%").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                     }
                     ProgressView(value: min(max(job.progress, 0), 1)).tint(queue.held ? .orange : nil)
-                    Text(queue.held ? "\(queue.paused ? "暫停中" : "排程外")・本項完成後停下" : job.detail.isEmpty ? job.stage.label : "\(job.stage.label)・\(job.detail)")
+                    Text(queue.held ? (queue.paused ? "已暫停・繼續後從這一步接著做" : "排程外・本項完成後停下") : job.detail.isEmpty ? job.stage.label : "\(job.stage.label)・\(job.detail)")
                         .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
             }
@@ -1513,7 +1513,7 @@ struct DelaySheet: View {
             } else {
                 DatePicker("繼續時間", selection: $at, in: Date()..., displayedComponents: [.date, .hourAndMinute])
             }
-            Text("進行中的項目做完後停下，\(target.formatted(date: .abbreviated, time: .shortened)) 自動繼續。").font(.caption).foregroundStyle(.secondary)
+            Text("立刻中斷進行中的下載與模型連線，\(target.formatted(date: .abbreviated, time: .shortened)) 自動繼續。").font(.caption).foregroundStyle(.secondary)
             HStack {
                 Spacer()
                 Button("取消") { dismiss() }.keyboardShortcut(.cancelAction)

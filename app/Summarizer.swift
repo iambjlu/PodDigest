@@ -145,7 +145,7 @@ enum Summarizer {
         // 1) 分段抽取筆記
         var notes: [String] = []
         for (i, part) in parts.enumerated() {
-            try Task.checkCancellation()
+            try await PauseGate.checkpoint()
             progress(Double(i) / Double(parts.count + 1), "分段筆記 \(i + 1)/\(parts.count)")
             let prompt = """
             這是《\(title)》逐字稿的第 \(i + 1)／\(parts.count) 段。請把這一段整理成詳細的筆記（Markdown 條列，不要結論式總結）。\(genre.mapFocus)。\(stamp)

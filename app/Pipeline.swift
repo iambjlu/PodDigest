@@ -127,7 +127,7 @@ enum Pipeline {
             let n = Double(items.count)
             audios = []; names = []
             for (i, it) in items.enumerated() {
-                try Task.checkCancellation()
+                try await PauseGate.checkpoint()
                 let sub = tmp.appendingPathComponent("dl\(i)")
                 try FileManager.default.createDirectory(at: sub, withIntermediateDirectories: true)
                 report(.downloading, 0.08 * Double(i) / n, "下載音訊 \(i + 1)/\(items.count)…")
@@ -146,7 +146,7 @@ enum Pipeline {
         var starts: [Double: String] = [:]          // 每個檔案的起點 → 檔名，用來在逐字稿插入分隔
         var duration = 0.0
         for (i, a) in audios.enumerated() {
-            try Task.checkCancellation()
+            try await PauseGate.checkpoint()
             let sub = tmp.appendingPathComponent("part\(i)")
             try FileManager.default.createDirectory(at: sub, withIntermediateDirectories: true)
             let label = audios.count > 1 ? "切割音訊 \(i + 1)/\(audios.count)" : "切割音訊"
@@ -169,7 +169,7 @@ enum Pipeline {
                 let mark = "【第 \(starts.keys.filter { $0 <= ch.offset }.count)／\(audios.count) 段：\(name)】"
                 lines.append(mark); onLines([mark])
             }
-            try Task.checkCancellation()
+            try await PauseGate.checkpoint()
             report(.transcribing, 0.12 + 0.43 * Double(i) / Double(n), "語音轉文字 \(i + 1)/\(n)")
             let hint = cfg.sttUsePrompt ? box.get().genre.sttHint + (prevTail.isEmpty ? "" : prevTail) : ""
             let r = try await STTClient.transcribe(file: ch.url, cfg: cfg, prompt: hint)

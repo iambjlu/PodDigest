@@ -93,7 +93,7 @@ final class JobQueue: ObservableObject {
     @Published var message = ""          // 加入連結時的提示（展開中、錯誤）
     @Published var expanding = false
     @Published var selection: UUID?
-    @Published var paused = false { didSet { savePause() } }       // 全域暫停：不再開始新項目（進行中的做完）
+    @Published var paused = false { didSet { savePause(); PauseGate.set(paused) } }       // 全域暫停：不再開始新項目（進行中的做完）
     @Published var resumeOnLaunch = false { didSet { savePause() } }  // 「暫停：下次打開 App 時繼續」
     @Published var resumeAt: Date? { didSet { savePause() } }       // 「暫停到下次排程」：到這個時間自動繼續；nil＝永久暫停
     @Published var outOfSchedule = false                            // 排程還沒開放（等開始時間或手動執行）
@@ -503,14 +503,14 @@ final class JobQueue: ObservableObject {
         resumeAt = nil
         resumeOnLaunch = onNextLaunch
         paused = true
-        log(onNextLaunch ? "已暫停：下次打開 App 時繼續，進行中的項目做完後不再開始新的" : "已暫停：進行中的項目做完後不再開始新的")
+        log(onNextLaunch ? "已暫停：下次打開 App 時繼續，進行中的下載與模型連線已中斷" : "已暫停：進行中的下載與模型連線已中斷，繼續後接著做")
     }
     /// 推遲：暫停到指定時間，到點自動繼續（進行中的項目做完後停下）
     func pause(until date: Date) {
         resumeAt = date
         resumeOnLaunch = false
         paused = true
-        log("已暫停到 \(Self.stamp.string(from: date))：進行中的項目做完後不再開始新的")
+        log("已暫停到 \(Self.stamp.string(from: date))：進行中的下載與模型連線已中斷")
     }
     func resume() { paused = false; resumeAt = nil; resumeOnLaunch = false; log("繼續處理"); kick() }
 
