@@ -143,7 +143,7 @@ enum STTClient {
         }
         field("model", cfg.sttModel)
         field("response_format", format)
-        field("temperature", "0")
+        field("temperature", "0.1")      // 0 是貪婪解碼，遇到靜音／音樂容易陷入重複迴圈；略高一點可降低機率
         let lang = cfg.sttLanguage.trimmingCharacters(in: .whitespaces)
         if !lang.isEmpty && lang != "auto" { field("language", lang) }
         if !prompt.isEmpty { field("prompt", prompt) }

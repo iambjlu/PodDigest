@@ -119,7 +119,7 @@ PodDigest/
 - `Net.endpoint`：整理使用者填的網址，缺 scheme 補 `http://`，只有 host 時補 `/v1`。
 - `Net.send`：遇到 429、5xx 或連線中斷／逾時自動重試（最多 3 次，間隔 2、4 秒）；支援取消。
 - `Net.listModels`：`GET /models`，給連線測試與取得模型清單。
-- `STTClient`：`POST /audio/transcriptions`（multipart）。先要 `verbose_json`（含分句時間），伺服器回 400／422 就退回 `json`。Whisper 在靜音時會把提示詞回吐，`stripEcho`／`isEcho` 濾掉；濾完沒剩就不帶提示詞重試一次。
+- `STTClient`：`POST /audio/transcriptions`（multipart，`temperature` 固定送 0.1）。先要 `verbose_json`（含分句時間），伺服器回 400／422 就退回 `json`。Whisper 在靜音時會把提示詞回吐，`stripEcho`／`isEcho` 濾掉；濾完沒剩就不帶提示詞重試一次。
 - `LLMClient.chat`：`POST /chat/completions`（非串流）。沒填模型時取 `/models` 第一個；`llmDisableThinking` 會帶 `chat_template_kwargs.enable_thinking=false`；`stripThink` 移除 `<think>` 區塊；空回應丟錯誤並提示。
 
 ### 3.7 `Summarizer.swift`：逐字稿 → 重點
