@@ -159,7 +159,7 @@ PodDigest/
   - 儲存位置兩種：`local`（UserDefaults）／`folder`（同步資料夾的 `settings.json`，第一次執行有 iCloud Drive 就預設 `iCloud Drive/PodDigest`）。UserDefaults 永遠留一份本機副本。
   - `SettingsFile`：`values`（一般設定）與 `secrets`（只有「API Key 也存到資料夾」開啟才寫）。
   - 變動後延遲 0.8 秒存檔；`reloadIfChanged` 比對檔案修改時間，另一台電腦改過就重新讀取。
-  - `autoTitle`（自動命名標題）在工作台選項列與設定頁都有核取方塊，預設關閉。
+  - `autoTitle`（自動命名標題）在工作台選項列與設定頁都有核取方塊（標示僅限檔案／語音備忘錄），預設關閉。
   - `keepAudio`（保留下載的音訊）在工作台選項列與設定頁都有核取方塊。
   - `ytdlpPath` 與儲存位置相關欄位每台電腦各自記住，不進同步檔。
   - 環境變數 `PD_STT_URL`、`PD_STT_MODEL`、`PD_LLM_URL`、`PD_LLM_MODEL`、`PD_OUT_DIR` 可覆蓋設定（測試用，不會存起來）。

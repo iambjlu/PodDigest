@@ -189,7 +189,7 @@ struct WorkbenchView: View {
                 }
                 Divider().frame(height: 14)
                 Toggle("重點後附逐字稿", isOn: $settings.includeTranscript).toggleStyle(.checkbox).font(.caption)
-                Toggle("自動命名標題", isOn: $settings.autoTitle).toggleStyle(.checkbox).font(.caption)
+                Toggle("自動命名標題（僅限檔案／語音備忘錄）", isOn: $settings.autoTitle).toggleStyle(.checkbox).font(.caption)
                     .help("本地檔案與語音備忘錄：整理完後請 LLM 依內容取標題，並用它當輸出資料夾與檔案名稱（YouTube 影片沿用原標題）")
                 Toggle("保留下載的音訊", isOn: $settings.keepAudio).toggleStyle(.checkbox).font(.caption)
                     .help("YouTube 連結下載的音訊，處理完後保留在輸出資料夾（與整理結果同一個子資料夾）；不勾選就用完即刪")
@@ -1223,7 +1223,7 @@ struct SettingsView: View {
                 }
                 Toggle("在重點後面附上逐字稿（Markdown／HTML／PDF／重點 TXT）", isOn: $settings.includeTranscript)
                 Toggle("保留下載的音訊（YouTube 連結，存在輸出子資料夾內）", isOn: $settings.keepAudio)
-                Toggle("自動命名標題（本地檔案與語音備忘錄，整理完後由 LLM 依內容取標題）", isOn: $settings.autoTitle)
+                Toggle("自動命名標題（僅限本地檔案與語音備忘錄，YouTube 沿用原標題；整理完後由 LLM 依內容取標題）", isOn: $settings.autoTitle)
             }
             Section("YouTube") {
                 let found = Tool.find("yt-dlp", custom: settings.ytdlpPath)
