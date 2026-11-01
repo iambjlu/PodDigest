@@ -213,6 +213,13 @@ enum Pipeline {
         return PipelineOutput(transcript: lines, body: body, duration: duration, files: files, doc: doc)
     }
 
+    /// 啟動時清掉上次被強制結束而殘留的暫存資料夾（正常結束時 transcribe 的 defer 已刪）
+    static func cleanStaleTemp() {
+        let fm = FileManager.default
+        let items = (try? fm.contentsOfDirectory(at: fm.temporaryDirectory, includingPropertiesForKeys: nil)) ?? []
+        for u in items where u.lastPathComponent.hasPrefix("PodDigest-") { try? fm.removeItem(at: u) }
+    }
+
     /// 輸出資料夾：[播放清單/]標題（每個音檔一個子資料夾，檔案不會散在一起）
     static func outputDir(_ input: JobInput, _ cfg: PipelineConfig) -> URL {
         var dir = URL(fileURLWithPath: (cfg.outputDir as NSString).expandingTildeInPath)

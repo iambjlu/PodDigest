@@ -104,6 +104,7 @@ PodDigest/
   4. 驗證：沒有任何內容或少於 20 字會丟出錯誤。
   - 暫存音訊放在 `temporaryDirectory/PodDigest-<UUID>`，`defer` 結束即刪；每段送出後也立刻刪。
 - `finish`：此時才讀 `OptionsBox`；類型為 `auto` 時先 `Summarizer.detect`；`cfg.timestamps` 關閉則 `stripStamp` 去掉時間標記；呼叫 `Summarizer.summarize`；組成 `DigestDoc`（meta：類型、長度、來源、整理時間、語音模型、LLM）；輸出到 `outputDir[/播放清單]/<標題>/`，再 `Exporter.write`。`base` 參數讓進度條從 0.55（完整流程）或 0（再做一份）開始。
+- `cleanStaleTemp`：啟動時（`JobQueue.restore` 一開始、尚未處理任何項目）刪除 `temporaryDirectory` 下殘留的 `PodDigest-*` 暫存資料夾（上次被強制結束時 `defer` 沒機會執行）。
 - `regenerate`：取 `prior.transcript` 呼叫 `finish`，不重新轉文字。
 
 ### 3.5 `Media.swift`：音訊與外部程式

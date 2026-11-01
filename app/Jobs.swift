@@ -140,6 +140,7 @@ final class JobQueue: ObservableObject {
 
     /// 啟動時把上次沒做完的項目放回佇列並自動繼續（處理中斷的會從頭再做）
     func restore() {
+        Pipeline.cleanStaleTemp()       // 此時還沒開始處理任何項目，暫存資料夾都是殘留的
         let saved = QueueStore.load()
         guard !saved.isEmpty else { return }
         for sj in saved {
