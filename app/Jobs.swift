@@ -53,7 +53,7 @@ final class Job: ObservableObject, Identifiable {
     @Published var jobLog: [String] = []                  // 這個項目自己的日誌
     @Published var startedAt: Date?
     @Published var finishedAt: Date?
-    @Published var customTitle: String?                   // 自動命名產生的標題（本地檔案／語音備忘錄）
+    @Published var customTitle: String?                   // 自動命名產生的標題
     var title: String { customTitle ?? input.title }
     var output: PipelineOutput? { versions.indices.contains(viewing) ? versions[viewing] : versions.last }
 

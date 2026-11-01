@@ -223,11 +223,11 @@ enum Pipeline {
             report(.summarizing, base + (0.95 - base) * f, msg)
         }
 
-        // 標題：沿用指定的（再做一份時沿用上一版）；開了「自動命名」就請 LLM 依內容取一個，並在後面保留原標題
+        // 標題：沿用指定的（再做一份時沿用上一版）；開了「自動命名」就請 LLM 依內容取一個
         var docTitle = title ?? input.title
         if title == nil, cfg.autoTitle {
             report(.summarizing, 0.94, "產生標題…")
-            if let t = await Summarizer.makeTitle(original: input.title, body: body, cfg: c) { docTitle = withOriginal(t, input.title) }
+            if let t = await Summarizer.makeTitle(original: input.title, body: body, cfg: c) { docTitle = t }
         }
 
         // 5) 輸出（這時才讀輸出格式）
@@ -244,13 +244,6 @@ enum Pipeline {
         let files = try await Exporter.write(doc, formats: o2.formats, dir: dir)
         report(.done, 1, "完成")
         return PipelineOutput(transcript: lines, body: body, duration: duration, files: files, doc: doc)
-    }
-
-    /// 新標題後面接上原檔名「新標題（原檔名）」，方便用原檔名搜尋。資料夾名稱上限 80 字，所以先縮短新標題，確保原檔名完整留在結尾
-    static func withOriginal(_ new: String, _ original: String) -> String {
-        let orig = String(Exporter.safeName(original).prefix(50))
-        let head = String(new.prefix(max(8, 80 - orig.count - 2)))
-        return "\(head)（\(orig)）"
     }
 
     /// 啟動時清掉上次被強制結束而殘留的暫存資料夾（正常結束時 transcribe 的 defer 已刪）
