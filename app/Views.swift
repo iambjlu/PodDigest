@@ -1432,8 +1432,15 @@ private struct PauseStyle: ViewModifier {
     let prominent: Bool
     let color: Color
     func body(content: Content) -> some View {
-        if prominent { content.buttonStyle(.borderedProminent).tint(color).controlSize(.small) }
-        else { content.buttonStyle(.borderless).font(.caption) }
+        if prominent {
+            // 只調這顆按鈕：淡底＋同色字，避免白字壓在橘底上看不清；關掉系統強調色的焦點外框
+            content.menuStyle(.borderlessButton).menuIndicator(.visible)
+                .font(.callout.weight(.semibold)).foregroundStyle(color)
+                .padding(.horizontal, 10).padding(.vertical, 4)
+                .background(color.opacity(0.18), in: Capsule())
+                .overlay(Capsule().strokeBorder(color.opacity(0.45)))
+                .focusEffectDisabled()
+        } else { content.buttonStyle(.borderless).font(.caption) }
     }
 }
 
