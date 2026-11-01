@@ -193,6 +193,11 @@ final class SettingsStore: ObservableObject {
     @Published var batchMode = BatchMode.perItem { didSet { changed() } }
     @Published var notifyOnFinish = true { didSet { changed() } }
     @Published var quitWhenDone = false { didSet { changed() } }
+    // 排程：只在指定時段處理（開始大於結束＝跨午夜）；星期用 Calendar 的 1=週日…7=週六
+    @Published var scheduleEnabled = false { didSet { changed() } }
+    @Published var scheduleStart = 23 * 60 { didSet { changed() } }
+    @Published var scheduleEnd = 7 * 60 { didSet { changed() } }
+    @Published var scheduleDays: Set<Int> = [1, 2, 3, 4, 5, 6, 7] { didSet { changed() } }
     // 輸出
     @Published var outputDir = "~/Documents/PodDigest" { didSet { changed() } }
     @Published var formats: Set<OutputFormat> = [.md, .html] { didSet { changed() } }
@@ -225,6 +230,35 @@ final class SettingsStore: ObservableObject {
         if let v = env["PD_OUT_DIR"] { outputDir = v }
     }
 
+    // MARK: 排程
+
+    /// 這個時間點是否在排程時段內（沒開排程＝一律可以處理）
+    func inSchedule(_ date: Date = Date()) -> Bool {
+        guard scheduleEnabled else { return true }
+        let cal = Calendar.current
+        let c = cal.dateComponents([.hour, .minute, .weekday], from: date)
+        let m = (c.hour ?? 0) * 60 + (c.minute ?? 0)
+        let today = c.weekday ?? 1
+        let yesterday = today == 1 ? 7 : today - 1
+        if scheduleStart == scheduleEnd { return scheduleDays.contains(today) }
+        if scheduleStart < scheduleEnd { return scheduleDays.contains(today) && m >= scheduleStart && m < scheduleEnd }
+        return (m >= scheduleStart && scheduleDays.contains(today)) || (m < scheduleEnd && scheduleDays.contains(yesterday))
+    }
+
+    /// 下一次排程開始的時間（沒開排程或沒勾任何星期＝nil）
+    func nextScheduleStart(after date: Date = Date()) -> Date? {
+        guard scheduleEnabled, !scheduleDays.isEmpty else { return nil }
+        let cal = Calendar.current
+        let day0 = cal.startOfDay(for: date)
+        for d in 0...8 {
+            guard let day = cal.date(byAdding: .day, value: d, to: day0),
+                  let t = cal.date(byAdding: .minute, value: scheduleStart, to: day), t > date,
+                  scheduleDays.contains(cal.component(.weekday, from: t)) else { continue }
+            return t
+        }
+        return nil
+    }
+
     // MARK: 讀取與儲存
 
     private var fileURL: URL { URL(fileURLWithPath: (folderPath as NSString).expandingTildeInPath).appendingPathComponent("settings.json") }
@@ -237,7 +271,7 @@ final class SettingsStore: ObservableObject {
          "outputLanguage": outputLanguage, "timestamps": String(timestamps), "customGenrePrompt": customGenrePrompt,
          "outputDir": outputDir.replacingOccurrences(of: NSHomeDirectory(), with: "~"),
          "formats": formats.map(\.rawValue).sorted().joined(separator: ","),
-         "includeTranscript": String(includeTranscript), "keepAudio": String(keepAudio), "autoTitle": String(autoTitle), "askEachTime": String(askEachTime), "batchMode": batchMode.rawValue, "notifyOnFinish": String(notifyOnFinish), "quitWhenDone": String(quitWhenDone), "ytdlpExtraArgs": ytdlpExtraArgs]
+         "includeTranscript": String(includeTranscript), "keepAudio": String(keepAudio), "autoTitle": String(autoTitle), "askEachTime": String(askEachTime), "batchMode": batchMode.rawValue, "notifyOnFinish": String(notifyOnFinish), "quitWhenDone": String(quitWhenDone), "scheduleEnabled": String(scheduleEnabled), "scheduleStart": String(scheduleStart), "scheduleEnd": String(scheduleEnd), "scheduleDays": scheduleDays.sorted().map(String.init).joined(separator: ","), "ytdlpExtraArgs": ytdlpExtraArgs]
     }
 
     private func apply(_ v: [String: String]) {
@@ -263,6 +297,10 @@ final class SettingsStore: ObservableObject {
         batchMode = v["batchMode"].flatMap(BatchMode.init(rawValue:)) ?? batchMode
         notifyOnFinish = b("notifyOnFinish", notifyOnFinish)
         quitWhenDone = b("quitWhenDone", quitWhenDone)
+        scheduleEnabled = b("scheduleEnabled", scheduleEnabled)
+        scheduleStart = v["scheduleStart"].flatMap(Int.init) ?? scheduleStart
+        scheduleEnd = v["scheduleEnd"].flatMap(Int.init) ?? scheduleEnd
+        if let d = v["scheduleDays"] { scheduleDays = Set(d.split(separator: ",").compactMap { Int($0) }) }
         ytdlpExtraArgs = s("ytdlpExtraArgs", ytdlpExtraArgs)
     }
 

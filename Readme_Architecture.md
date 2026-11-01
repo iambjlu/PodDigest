@@ -69,11 +69,11 @@ PodDigest/
 
 ### 3.2 `Views.swift`：介面
 `MainWindow` 是三個分頁：
-- **工作台** `WorkbenchView`：加入來源（拖放、檔案選擇、語音備忘錄、YouTube 連結）、內容類型／詳細程度／輸出格式選擇、連結輸入框可用右側按鈕展開成多行編輯框（Return 換行、按「加入」送出）或收合回單行，佇列清單（寬度固定 340，與右側詳情之間只有一條不可拖動的分隔線；`JobRow`，左邊有核取方塊；標題列有全選、刪除選取、暫停／繼續，清單按 Delete 鍵刪除勾選項，沒勾選則刪目前選取的）、右側 `JobDetail`（結果預覽、版本切換、即時逐字稿 `LiveView`、`OptionsEditor` 可在做完前改設定）。
+- **工作台** `WorkbenchView`：加入來源（拖放、檔案選擇、語音備忘錄、YouTube 連結；工作台不再放內容類型／詳細程度／輸出格式選擇，每次加入一律跳 `AskSheet` 詢問，額外要求也在 `AskSheet` 輸入；工作台只留「重點後附逐字稿／自動命名標題／保留下載的音訊」與輸出資料夾）、標題列有全域暫停／繼續按鈕與狀態標籤、連結輸入框可用右側按鈕展開成多行編輯框（Return 換行、按「加入」送出）或收合回單行，佇列清單（寬度固定 340，與右側詳情之間只有一條不可拖動的分隔線；`JobRow`，左邊有核取方塊；標題列有全選、刪除選取、暫停／繼續，清單按 Delete 鍵刪除勾選項，沒勾選則刪目前選取的）、右側 `JobDetail`（結果預覽、版本切換、即時逐字稿 `LiveView`、`OptionsEditor` 可在做完前改設定）。
 - **設定** `SettingsView`：STT／LLM 位址模型金鑰、連線測試、輸出、處理方式、同步資料夾、yt-dlp 更新、診斷模式開關。
 - **日誌** `LogView`：顯示 `queue.logs`。
 
-合併：勾「多個檔案合併成一份」時，檔案走 `MergeSheet`；貼連結則先 `expandLinks` 解析（播放清單展開後一併合併），2 部以上才跳 `MergeSheet`（`MergeDraft.isRemote`）排序與取名，確認後以 `AddRequest.mergedRemote` 加入，只有 1 部就照一般流程。其他視圖：`AskSheet`（每次加入前詢問類型與格式；上方先預覽將加入的項目——檔案列檔名、連結先經 `JobQueue.expandLinks` 展開成影片標題，最多列 200 筆；展開完成前「加入並開始」停用，確認時直接用已展開的結果，不再重新解析；解析中可按「略過預覽直接開始」，改由背景解析後直接加入）、`MergeSheet`（多段錄音合併排序）、`VoiceMemosSheet`、`ConvertSheet`（轉換 Markdown）、`HTMLView`（WKWebView 預覽）、`ReadOnlyText`、`MenuContent`（選單列面板）。`AddRequest` 描述一次待確認的加入動作（files／links／merged）。
+合併：勾「多個檔案合併成一份」時，檔案走 `MergeSheet`；貼連結則先 `expandLinks` 解析（播放清單展開後一併合併），2 部以上才跳 `MergeSheet`（`MergeDraft.isRemote`）排序與取名，確認後以 `AddRequest.mergedRemote` 加入，只有 1 部就照一般流程。其他視圖：`AskSheet`（每次加入前一律詢問類型、詳細程度、輸出格式與額外要求；上方先預覽將加入的項目——檔案列檔名、連結先經 `JobQueue.expandLinks` 展開成影片標題，最多列 200 筆；展開完成前「加入並開始」停用，確認時直接用已展開的結果，不再重新解析；解析中可按「略過預覽直接開始」，改由背景解析後直接加入）、`MergeSheet`（多段錄音合併排序）、`VoiceMemosSheet`、`ConvertSheet`（轉換 Markdown）、`HTMLView`（WKWebView 預覽）、`ReadOnlyText`、`MenuContent`（選單列面板）。`AddRequest` 描述一次待確認的加入動作（files／links／merged）。
 
 ### 3.3 `Jobs.swift`：工作佇列
 - `Job`（`@MainActor ObservableObject`）：一個項目的狀態——`stage`、`progress`、`detail`、`versions`（每「再做一份」多一版，逐字稿共用）、`liveLines`（即時逐字稿，上限 400 行）、`jobLog`（上限 300 行）、`transcript`（分階段模式暫存）。`options` 變動會同步寫入 `OptionsBox`。
@@ -85,7 +85,7 @@ PodDigest/
     - `.transcribeOnly`（`BatchMode.sttFirst` 且非再做一份）：只轉文字，存入 `job.transcript`，stage 設為 `.awaiting`、進度 0.55
     - `.finishOnly`：對 `.awaiting` 的項目用暫存逐字稿呼叫 `Pipeline.finish`
     - 再做一份（`regen`）：`Pipeline.regenerate`
-  - 全域暫停：`paused` 為真時排程迴圈不再取出新項目（進行中的做完為止）；暫停結束的迴圈不觸發 `onFinished`。`pause()`／`resume()` 切換。
+  - 全域暫停：`paused` 為真時排程迴圈不再取出新項目（進行中的做完為止）；暫停結束的迴圈不觸發 `onFinished`。`pause()`／`resume()` 切換。暫停時 UI 改為橘色「暫停中／已暫停」樣式（標題列標籤、`JobRow`、`JobDetail`、選單列面板與圖示），並說明進行中的項目做完後才停下，避免進度看起來像當掉。
   - 批量刪除：`checked` 是清單左邊核取方塊勾選的項目 ID，`removeChecked()` 取消並移除全部勾選項。
   - 控制：`cancel`、`retry`、`retryAll`、`rerun`（沿用逐字稿再整理）、`retranscribe`（丟掉逐字稿重來）、`remove`、`clearFinished`、`cancelAll`。
   - `overallProgress`：未完成與已完成項目進度平均，給選單列顯示。

@@ -57,7 +57,6 @@ struct WorkbenchView: View {
     @ObservedObject var settings: SettingsStore
     @State private var links = ""
     @State private var linksExpanded = false
-    @State private var extra = ""
     @State private var targeted = false
     @State private var pending: AddRequest?
     @State private var showMemos = false
@@ -96,7 +95,7 @@ struct WorkbenchView: View {
             return true
         }
         .sheet(item: $pending) { req in
-            AskSheet(request: req, settings: settings, queue: queue, extra: extra) { opts, groups in
+            AskSheet(request: req, settings: settings, queue: queue) { opts, groups in
                 perform(req, opts, groups)
             }
         }
@@ -134,7 +133,12 @@ struct WorkbenchView: View {
                 Text("音訊／YouTube → 重點整理（Markdown、HTML、PDF）").font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
-            if queue.isBusy {
+            if queue.isBusy || queue.pending > 0 || queue.paused {
+                PauseControl(queue: queue, prominent: true)
+            }
+            if queue.held {
+                StatusPill(text: (queue.isBusy ? "本項完成後停下 · " : "") + queue.holdNote + " · \(queue.pending) 個等待", color: .orange)
+            } else if queue.isBusy {
                 StatusPill(text: "處理中 · 還有 \(queue.pending) 個排隊", color: .purple)
             } else if queue.pending > 0 {
                 StatusPill(text: "排隊 \(queue.pending)", color: .gray)
@@ -146,56 +150,14 @@ struct WorkbenchView: View {
 
     private var inputCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("內容類型").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
-                    ForEach(Genre.all) { g in
-                        let on = settings.genreID == g.id
-                        Button { settings.genreID = g.id } label: {
-                            Label(g.name, systemImage: g.icon).font(.callout)
-                                .padding(.horizontal, 10).padding(.vertical, 5)
-                                .background(on ? Color.accentColor.opacity(0.18) : Color.primary.opacity(0.06), in: Capsule())
-                                .overlay(Capsule().strokeBorder(on ? Color.accentColor : .clear))
-                                .foregroundStyle(on ? Color.accentColor : Color.primary)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
-            Text(settings.genre.blurb).font(.caption).foregroundStyle(.secondary)
-            if settings.genreID == "custom" {
-                TextField("自訂整理要求（例如：用表格列出每個人的發言重點）", text: $settings.customGenrePrompt)
-                    .textFieldStyle(.roundedBorder)
-            }
             HStack(spacing: 8) {
-                Picker("詳細程度", selection: $settings.detail) {
-                    ForEach(DetailLevel.allCases) { Text($0.label).tag($0) }
-                }
-                .pickerStyle(.segmented).frame(maxWidth: 220)
-                TextField("額外要求（選填，套用到這次加入的項目）", text: $extra).textFieldStyle(.roundedBorder)
-            }
-            HStack(spacing: 6) {
-                Text("輸出").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                ForEach(OutputFormat.allCases) { f in
-                    let on = settings.formats.contains(f)
-                    Button { if on { settings.formats.remove(f) } else { settings.formats.insert(f) } } label: {
-                        Text(f.shortLabel).font(.caption.weight(.medium))
-                            .padding(.horizontal, 9).padding(.vertical, 3)
-                            .background(on ? Color.accentColor.opacity(0.18) : Color.primary.opacity(0.06), in: Capsule())
-                            .overlay(Capsule().strokeBorder(on ? Color.accentColor : .clear))
-                            .foregroundStyle(on ? Color.accentColor : Color.secondary)
-                    }
-                    .buttonStyle(.plain)
-                }
+                Text("每次加入前都會詢問內容類型、詳細程度與輸出格式").font(.caption).foregroundStyle(.secondary)
                 Divider().frame(height: 14)
                 Toggle("重點後附逐字稿", isOn: $settings.includeTranscript).toggleStyle(.checkbox).font(.caption)
                 Toggle("自動命名標題", isOn: $settings.autoTitle).toggleStyle(.checkbox).font(.caption)
                     .help("整理完後請 LLM 依內容取標題，用它當輸出資料夾與檔案名稱；檔案、語音備忘錄、YouTube（含合併）都適用，原檔名／網址仍記錄在文件的「來源」欄位")
                 Toggle("保留下載的音訊", isOn: $settings.keepAudio).toggleStyle(.checkbox).font(.caption)
                     .help("YouTube 連結下載的音訊，處理完後保留在輸出資料夾（與整理結果同一個子資料夾）；不勾選就用完即刪")
-                Toggle("每次都詢問", isOn: $settings.askEachTime).toggleStyle(.checkbox).font(.caption)
-                    .help("每次加入檔案或連結前，先跳出視窗確認內容類型、詳細程度與輸出格式")
-                if settings.formats.isEmpty { Text("未勾選＝只在視窗顯示").font(.caption).foregroundStyle(.orange) }
             }
             HStack(spacing: 8) {
                 Image(systemName: "folder").foregroundStyle(.secondary).font(.caption)
@@ -287,11 +249,7 @@ struct WorkbenchView: View {
                 }
                 .buttonStyle(.borderless).font(.caption).disabled(queue.jobs.isEmpty)
                 if queue.isBusy || queue.pending > 0 || queue.paused {
-                    Button { queue.paused ? queue.resume() : queue.pause() } label: {
-                        Label(queue.paused ? "繼續" : "暫停", systemImage: queue.paused ? "play.fill" : "pause.fill")
-                    }
-                    .buttonStyle(.borderless).font(.caption)
-                    .help(queue.paused ? "繼續處理排隊中的項目" : "暫停：進行中的項目做完後，不再開始新的項目")
+                    PauseControl(queue: queue, prominent: false)
                 }
                 if queue.isBusy || queue.pending > 0 {
                     Button("全部停止") { queue.cancelAll() }.buttonStyle(.borderless).font(.caption)
@@ -349,7 +307,7 @@ struct WorkbenchView: View {
             Task { await mergeLinks(text, r) }
             return
         }
-        if settings.askEachTime { pending = r } else { perform(r, queue.options(extra: extra)) }
+        pending = r
     }
 
     private func mergeLinks(_ text: String, _ r: AddRequest) async {
@@ -367,7 +325,7 @@ struct WorkbenchView: View {
                                       title: "\(items[0].title)（合併 \(items.count) 部）", isRemote: true)
         } else if !items.isEmpty {         // 只有一部：不用合併，照一般流程
             queue.message = "只有 1 部影片，不需要合併"
-            if settings.askEachTime { pending = r } else { queue.addRemote(res.groups, queue.options(extra: extra)) }
+            pending = r
         }
     }
 
@@ -617,7 +575,6 @@ struct AskSheet: View {
     let request: AddRequest
     @ObservedObject var settings: SettingsStore
     @ObservedObject var queue: JobQueue
-    let extra: String
     let onConfirm: (BatchOptions, [[RemoteItem]]?) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var previewTitles: [String] = []     // 預覽：即將加入的標題
@@ -627,7 +584,7 @@ struct AskSheet: View {
     @State private var genreID = ""
     @State private var detail = DetailLevel.standard
     @State private var formats: Set<OutputFormat> = []
-    @State private var note = ""
+    @State private var extra = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -657,6 +614,7 @@ struct AskSheet: View {
                 }
             }
             if formats.isEmpty { Text("沒有勾選格式時只會顯示在視窗內，不存檔。").font(.caption).foregroundStyle(.orange) }
+            TextField("額外要求（選填，套用到這次加入的項目）", text: $extra).textFieldStyle(.roundedBorder)
             HStack {
                 if loading, case .links = request.kind {
                     Button("略過預覽直接開始") {       // 不等解析：背景解析連結後直接加入
@@ -799,7 +757,8 @@ struct JobRow: View {
     let selected: Bool
 
     var body: some View {
-        let tint = job.stage.color
+        let paused = queue.held && (job.stage.running || job.stage.pending)
+        let tint = paused ? Color.orange : job.stage.color
         HStack(spacing: 10) {
             Toggle("", isOn: Binding(get: { queue.checked.contains(job.id) },
                                      set: { if $0 { queue.checked.insert(job.id) } else { queue.checked.remove(job.id) } }))
@@ -811,11 +770,12 @@ struct JobRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Text(job.title).font(.callout.weight(.semibold)).lineLimit(1)
-                    StatusPill(text: job.stage.label, color: tint)
+                    StatusPill(text: paused ? (queue.paused ? (job.stage.running ? "暫停中" : "已暫停") : "排程外") : job.stage.label, color: tint)
                 }
                 if job.stage.running {
-                    ProgressView(value: min(max(job.progress, 0), 1))
-                    Text(job.detail).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    ProgressView(value: min(max(job.progress, 0), 1)).tint(tint)
+                    Text(paused ? (queue.paused ? "暫停中" : "排程外") + "・本項完成後停下" + (job.detail.isEmpty ? "" : "（\(job.detail)）") : job.detail)
+                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 } else if job.stage == .failed {
                     Text(job.error).font(.caption).foregroundStyle(.red).lineLimit(2)
                 } else {
@@ -958,7 +918,8 @@ struct LiveView: View {
                 HStack {
                     Image(systemName: job.sourceIcon).foregroundStyle(job.stage.color)
                     Text(job.title).font(.headline).lineLimit(2)
-                    StatusPill(text: job.stage.label, color: job.stage.color)
+                    StatusPill(text: queue.held && (job.stage.running || job.stage.pending) ? (queue.paused ? (job.stage.running ? "暫停中" : "已暫停") : "排程外") : job.stage.label,
+                               color: queue.held && (job.stage.running || job.stage.pending) ? .orange : job.stage.color)
                     Spacer()
                     if job.stage.running || job.stage.pending {
                         Button(role: .destructive) { queue.cancel(job) } label: { Label("取消", systemImage: "stop.fill") }
@@ -984,7 +945,11 @@ struct LiveView: View {
                     }
                 }
                 if job.stage.running {
-                    ProgressView(value: min(max(job.progress, 0), 1))
+                    ProgressView(value: min(max(job.progress, 0), 1)).tint(queue.held ? .orange : nil)
+                    if queue.held {
+                        Label("\(queue.holdNote)：這個項目做完後就會停下，不會開始新的項目。", systemImage: "pause.circle.fill")
+                            .font(.caption).foregroundStyle(.orange)
+                    }
                     HStack {
                         Text(job.detail).font(.callout)
                         Spacer()
@@ -996,6 +961,8 @@ struct LiveView: View {
                             }
                         }
                     }
+                } else if job.stage.pending && queue.held {
+                    Label("\(queue.holdNote)，到時候才會開始處理。", systemImage: "pause.circle.fill").font(.callout).foregroundStyle(.orange)
                 } else if job.stage.pending {
                     Text(job.stage == .awaiting ? "逐字稿已完成，等其他音檔都轉完文字後，再一起交給 LLM 整理。" + (job.detail.isEmpty ? "" : "\n\(job.detail)")
                          : (job.detail.isEmpty ? "排隊中，前面還有 \(queue.ahead(of: job)) 個" : job.detail))
@@ -1205,6 +1172,9 @@ struct SettingsView: View {
                         .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.primary.opacity(0.15)))
                 }
             }
+            Section("排程") {
+                ScheduleSettings(settings: settings)
+            }
             Section("輸出") {
                 HStack {
                     TextField("輸出資料夾", text: $settings.outputDir)
@@ -1364,7 +1334,9 @@ struct MenuContent: View {
                 Image(systemName: "text.badge.checkmark").foregroundStyle(.purple)
                 Text("PodDigest").font(.headline)
                 Spacer()
-                if queue.isBusy || queue.pending > 0 {
+                if queue.held {
+                    StatusPill(text: queue.paused ? (queue.isBusy ? "暫停中" : "已暫停") : "排程外", color: .orange)
+                } else if queue.isBusy || queue.pending > 0 {
                     // 只有一個項目時整體＝它自己；多個時標明「整體」與完成數，避免和下面每個項目的進度條搞混
                     let n = queue.jobs.filter { [.queued, .awaiting, .done].contains($0.stage) || $0.stage.running }.count
                     let d = queue.jobs.filter { $0.stage == .done }.count
@@ -1380,8 +1352,8 @@ struct MenuContent: View {
                         Spacer()
                         Text("\(Int(min(max(job.progress, 0), 1) * 100))%").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                     }
-                    ProgressView(value: min(max(job.progress, 0), 1))
-                    Text(job.detail.isEmpty ? job.stage.label : "\(job.stage.label)・\(job.detail)")
+                    ProgressView(value: min(max(job.progress, 0), 1)).tint(queue.held ? .orange : nil)
+                    Text(queue.held ? "\(queue.paused ? "暫停中" : "排程外")・本項完成後停下" : job.detail.isEmpty ? job.stage.label : "\(job.stage.label)・\(job.detail)")
                         .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
             }
@@ -1394,9 +1366,7 @@ struct MenuContent: View {
                     openWindow(id: "main")
                 } label: { Label("主視窗", systemImage: "macwindow") }
                 if queue.isBusy || queue.pending > 0 || queue.paused {
-                    Button { queue.paused ? queue.resume() : queue.pause() } label: {
-                        Label(queue.paused ? "繼續" : "暫停", systemImage: queue.paused ? "play.circle" : "pause.circle")
-                    }
+                    PauseControl(queue: queue, prominent: false)
                 }
                 Button { queue.cancelAll() } label: { Label("全部停止", systemImage: "stop.circle") }
                 Spacer()
@@ -1405,5 +1375,74 @@ struct MenuContent: View {
             .buttonStyle(.borderless).font(.callout)
         }
         .padding(14).frame(width: 340)
+    }
+}
+
+
+/// 全域暫停／繼續：暫停時可選「永久暫停」或「暫停到下次排程」
+struct PauseControl: View {
+    @ObservedObject var queue: JobQueue
+    let prominent: Bool
+
+    var body: some View {
+        if queue.paused {
+            Button { queue.resume() } label: { Label("繼續", systemImage: "play.fill") }
+                .modifier(PauseStyle(prominent: prominent, color: .green))
+                .help("繼續處理排隊中的項目（\(queue.holdNote)）")
+        } else {
+            Menu {
+                Button { queue.pause() } label: { Label("永久暫停（手動繼續）", systemImage: "pause.fill") }
+                Button { queue.pause(untilSchedule: true) } label: { Label("暫停到下次排程", systemImage: "calendar.badge.clock") }
+                    .disabled(!queue.scheduleEnabled)
+            } label: { Label("全部暫停", systemImage: "pause.fill") }
+            .modifier(PauseStyle(prominent: prominent, color: .orange))
+            .fixedSize()
+            .help("暫停：進行中的項目做完後，不再開始新的項目" + (queue.scheduleEnabled ? "" : "（到設定頁開啟排程後，才能選「暫停到下次排程」）"))
+        }
+    }
+}
+
+private struct PauseStyle: ViewModifier {
+    let prominent: Bool
+    let color: Color
+    func body(content: Content) -> some View {
+        if prominent { content.buttonStyle(.borderedProminent).tint(color).controlSize(.small) }
+        else { content.buttonStyle(.borderless).font(.caption) }
+    }
+}
+
+/// 設定頁：只在指定時段處理
+struct ScheduleSettings: View {
+    @ObservedObject var settings: SettingsStore
+    private static let dayNames = [(2, "一"), (3, "二"), (4, "三"), (5, "四"), (6, "五"), (7, "六"), (1, "日")]
+
+    private func time(_ minutes: Binding<Int>) -> Binding<Date> {
+        Binding(get: { Calendar.current.date(bySettingHour: minutes.wrappedValue / 60, minute: minutes.wrappedValue % 60, second: 0, of: Date()) ?? Date() },
+                set: { let c = Calendar.current.dateComponents([.hour, .minute], from: $0); minutes.wrappedValue = (c.hour ?? 0) * 60 + (c.minute ?? 0) })
+    }
+
+    var body: some View {
+        Toggle("只在指定時段處理", isOn: $settings.scheduleEnabled)
+            .help("開啟後，只有在下列時段才會開始處理項目；時段結束時，進行中的項目做完就停下，下個時段再自動繼續。")
+        if settings.scheduleEnabled {
+            HStack {
+                DatePicker("開始", selection: time($settings.scheduleStart), displayedComponents: .hourAndMinute)
+                DatePicker("結束", selection: time($settings.scheduleEnd), displayedComponents: .hourAndMinute)
+                if settings.scheduleStart > settings.scheduleEnd { Text("（跨午夜）").font(.caption).foregroundStyle(.secondary) }
+            }
+            HStack(spacing: 6) {
+                Text("星期").font(.callout)
+                ForEach(Self.dayNames, id: \.0) { d in
+                    let on = settings.scheduleDays.contains(d.0)
+                    Button { if on { settings.scheduleDays.remove(d.0) } else { settings.scheduleDays.insert(d.0) } } label: {
+                        Text(d.1).font(.caption.weight(.medium)).frame(width: 24, height: 22)
+                            .background(on ? Color.accentColor.opacity(0.18) : Color.primary.opacity(0.06), in: Circle())
+                            .overlay(Circle().strokeBorder(on ? Color.accentColor : .clear))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            if settings.scheduleDays.isEmpty { Text("沒有勾選任何星期，等於永遠不會處理。").font(.caption).foregroundStyle(.orange) }
+        }
     }
 }

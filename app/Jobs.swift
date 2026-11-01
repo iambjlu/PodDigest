@@ -93,7 +93,10 @@ final class JobQueue: ObservableObject {
     @Published var message = ""          // 加入連結時的提示（展開中、錯誤）
     @Published var expanding = false
     @Published var selection: UUID?
-    @Published var paused = false        // 全域暫停：不再開始新項目（進行中的做完）
+    @Published var paused = false { didSet { savePause() } }       // 全域暫停：不再開始新項目（進行中的做完）
+    @Published var resumeAt: Date? { didSet { savePause() } }       // 「暫停到下次排程」：到這個時間自動繼續；nil＝永久暫停
+    @Published var outOfSchedule = false                            // 不在排程時段內（開了排程才會為真）
+    private var clock: Timer?
     @Published var checked = Set<UUID>() // 清單左邊核取方塊勾選的項目（批量刪除用）
     @Published var lingering = false     // 做完後視窗已關、App 留在選單列待命
 
@@ -104,7 +107,40 @@ final class JobQueue: ObservableObject {
     private var current: (job: Job, task: Task<Void, Never>)?
     private let settings: SettingsStore
 
-    init(settings: SettingsStore) { self.settings = settings }
+    init(settings: SettingsStore) {
+        self.settings = settings
+        clock = Timer.scheduledTimer(withTimeInterval: 20, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.tick() }
+        }
+    }
+
+    /// 暫停或排程外：不開始新項目
+    var held: Bool { paused || outOfSchedule }
+    var scheduleEnabled: Bool { settings.scheduleEnabled }
+    private static let stamp: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "M/d HH:mm"; return f
+    }()
+    /// 目前為什麼沒在開始新項目（給畫面顯示）
+    var holdNote: String {
+        if paused { return resumeAt.map { "暫停到下次排程（\(Self.stamp.string(from: $0))）" } ?? "已永久暫停" }
+        if outOfSchedule { return settings.nextScheduleStart().map { "排程外，\(Self.stamp.string(from: $0)) 開始" } ?? "排程外" }
+        return ""
+    }
+
+    private func savePause() {
+        let d = UserDefaults.standard
+        d.set(paused, forKey: "queuePaused")
+        d.set(resumeAt, forKey: "queueResumeAt")
+    }
+
+    /// 每 20 秒檢查：到了排程開始時間就自動繼續，排程時段開始時把等待中的項目叫起來
+    func tick() {
+        refreshSchedule()
+        if paused, let r = resumeAt, Date() >= r { resume(); return }
+        if !held, runner == nil, jobs.contains(where: { $0.stage.pending }) { kick() }
+    }
+
+    func refreshSchedule() { outOfSchedule = !settings.inSchedule() }
 
     /// 整體進度（0…1）：未完成的項目加上已完成的，給選單列顯示
     var overallProgress: Double {
@@ -146,7 +182,23 @@ final class JobQueue: ObservableObject {
     func restore() {
         Pipeline.cleanStaleTemp()       // 此時還沒開始處理任何項目，暫存資料夾都是殘留的
         let saved = QueueStore.load()
+        refreshSchedule()
+        // 上次結束時是暫停狀態：沒有待辦就清掉；有待辦就先維持暫停，問要繼續還是保持暫停（回答前不會開始處理）
+        let d = UserDefaults.standard
+        var wasPaused = d.bool(forKey: "queuePaused")
+        let until = d.object(forKey: "queueResumeAt") as? Date
+        if wasPaused, saved.isEmpty { paused = false; resumeAt = nil; wasPaused = false }
         guard !saved.isEmpty else { return }
+        if wasPaused, let u = until, u <= Date() { wasPaused = false; paused = false; resumeAt = nil }   // 預定的繼續時間已過
+        if wasPaused {
+            paused = true; resumeAt = until
+            let a = NSAlert()
+            a.messageText = "上次結束時佇列是暫停狀態"
+            a.informativeText = "有 \(saved.count) 個項目還沒做完。要繼續處理，還是保持暫停？" + (until.map { "\n（原本設定暫停到 \($0.formatted(date: .abbreviated, time: .shortened))）" } ?? "")
+            a.addButton(withTitle: "保持暫停")
+            a.addButton(withTitle: "繼續處理")
+            if a.runModal() == .alertSecondButtonReturn { paused = false; resumeAt = nil }
+        }
         for sj in saved {
             var cfg = settings.config(extraPrompt: sj.extra)
             cfg.detail = DetailLevel(rawValue: sj.detail) ?? cfg.detail
@@ -299,7 +351,8 @@ final class JobQueue: ObservableObject {
         runner = Task { [weak self] in
             // 先把排隊的處理完（分階段模式＝只轉文字），再回頭做「等待整理」的
             while let self {
-                if self.paused { break }
+                self.refreshSchedule()
+                if self.held { break }
                 if let job = self.jobs.first(where: { $0.stage == .queued }) {
                     await self.process(job, phase: self.settings.batchMode == .sttFirst && !(job.regen && !job.versions.isEmpty) ? .transcribeOnly : .full)
                 } else if let job = self.jobs.first(where: { $0.stage == .awaiting }) {
@@ -309,7 +362,7 @@ final class JobQueue: ObservableObject {
             guard let self else { return }
             self.runner = nil
             self.persistNow()
-            if self.paused { return }       // 暫停不算做完，不觸發完成通知／自動結束
+            if self.held { return }         // 暫停／排程外不算做完，不觸發完成通知／自動結束
             self.onFinished?(self.runDone, self.runFailed)
         }
     }
@@ -415,8 +468,13 @@ final class JobQueue: ObservableObject {
         kick()
     }
 
-    func pause() { paused = true; log("已暫停：進行中的項目做完後不再開始新的") }
-    func resume() { paused = false; log("繼續處理"); kick() }
+    /// untilSchedule＝暫停到下次排程時段開始；否則永久暫停（手動繼續）
+    func pause(untilSchedule: Bool = false) {
+        resumeAt = untilSchedule ? settings.nextScheduleStart() : nil
+        paused = true
+        log(resumeAt.map { "已暫停到下次排程（\(Self.stamp.string(from: $0))）：進行中的項目做完後不再開始新的" } ?? "已暫停：進行中的項目做完後不再開始新的")
+    }
+    func resume() { paused = false; resumeAt = nil; log("繼續處理"); kick() }
 
     /// 批量刪除勾選的項目（處理中的先取消）
     func removeChecked() {
