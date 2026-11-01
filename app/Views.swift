@@ -1388,6 +1388,7 @@ struct PauseControl: View {
     @ObservedObject var queue: JobQueue
     let prominent: Bool
     @State private var showDelay = false
+    @State private var delayMode = true          // true＝一段時間，false＝到指定時間
 
     var body: some View {
         if queue.paused {
@@ -1396,19 +1397,17 @@ struct PauseControl: View {
                 .help("繼續處理排隊中的項目（\(queue.holdNote)）")
         } else {
             Menu {
-                Button { queue.pause() } label: { Label("永久暫停（手動繼續）", systemImage: "pause.fill") }
-                Button { queue.pause(untilSchedule: true) } label: { Label("暫停到下次排程", systemImage: "calendar.badge.clock") }
-                    .disabled(!queue.scheduleEnabled)
-                Divider()
-                ForEach([(30, "30 分鐘"), (60, "1 小時"), (120, "2 小時"), (240, "4 小時")], id: \.0) { m, t in
-                    Button { queue.pause(until: Date().addingTimeInterval(Double(m) * 60)) } label: { Label("推遲 \(t) 後繼續", systemImage: "timer") }
-                }
-                Button { showDelay = true } label: { Label("推遲到指定時間…", systemImage: "clock.arrow.circlepath") }
+                Button { queue.pause() } label: { Label("暫停", systemImage: "pause.fill") }
+                Button { queue.pause(onNextLaunch: true) } label: { Label("暫停：下次打開 App 時繼續", systemImage: "power") }
+                Button { if let t = queue.nextScheduleStart { queue.pause(until: t) } } label: { Label("暫停：下次排程時間繼續", systemImage: "calendar.badge.clock") }
+                    .disabled(queue.nextScheduleStart == nil)
+                Button { delayMode = true; showDelay = true } label: { Label("暫停：一段時間…", systemImage: "timer") }
+                Button { delayMode = false; showDelay = true } label: { Label("暫停：到指定時間繼續…", systemImage: "clock.arrow.circlepath") }
             } label: { Label("全部暫停", systemImage: "pause.fill") }
             .modifier(PauseStyle(prominent: prominent, color: .orange))
             .fixedSize()
-            .sheet(isPresented: $showDelay) { DelaySheet(queue: queue) }
-            .help("暫停：進行中的項目做完後，不再開始新的項目" + (queue.scheduleEnabled ? "" : "（到設定頁開啟排程後，才能選「暫停到下次排程」）"))
+            .sheet(isPresented: $showDelay) { DelaySheet(queue: queue, byDuration: delayMode) }
+            .help("暫停：進行中的項目做完後，不再開始新的項目" + (queue.nextScheduleStart != nil ? "" : "（設定頁排程選「每天自動開始…」後，才能選「暫停：下次排程時間繼續」）"))
         }
     }
 }
@@ -1469,11 +1468,11 @@ struct ScheduleSettings: View {
 }
 
 
-/// 推遲：選「多久之後」或「指定時間」繼續
+/// 暫停一段時間／到指定時間繼續
 struct DelaySheet: View {
     @ObservedObject var queue: JobQueue
     @Environment(\.dismiss) private var dismiss
-    @State private var byDuration = true
+    let byDuration: Bool
     @State private var hours = 1
     @State private var minutes = 0
     @State private var at = Date().addingTimeInterval(3600)
@@ -1482,12 +1481,7 @@ struct DelaySheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("推遲繼續").font(.headline)
-            Picker("", selection: $byDuration) {
-                Text("多久之後").tag(true)
-                Text("指定時間").tag(false)
-            }
-            .pickerStyle(.segmented).labelsHidden()
+            Text(byDuration ? "暫停一段時間" : "暫停到指定時間繼續").font(.headline)
             if byDuration {
                 HStack(spacing: 16) {
                     Stepper("\(hours) 小時", value: $hours, in: 0...48)
@@ -1500,7 +1494,7 @@ struct DelaySheet: View {
             HStack {
                 Spacer()
                 Button("取消") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("暫停並推遲") { queue.pause(until: target); dismiss() }
+                Button("暫停") { queue.pause(until: target); dismiss() }
                     .keyboardShortcut(.defaultAction).disabled(byDuration && hours == 0 && minutes == 0)
             }
         }

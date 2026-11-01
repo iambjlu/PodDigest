@@ -94,6 +94,7 @@ final class JobQueue: ObservableObject {
     @Published var expanding = false
     @Published var selection: UUID?
     @Published var paused = false { didSet { savePause() } }       // 全域暫停：不再開始新項目（進行中的做完）
+    @Published var resumeOnLaunch = false { didSet { savePause() } }  // 「暫停：下次打開 App 時繼續」
     @Published var resumeAt: Date? { didSet { savePause() } }       // 「暫停到下次排程」：到這個時間自動繼續；nil＝永久暫停
     @Published var outOfSchedule = false                            // 排程還沒開放（等開始時間或手動執行）
     private var latched = false                                     // 「到點開始／立即執行」後一路做到佇列做完
@@ -118,12 +119,13 @@ final class JobQueue: ObservableObject {
 
     /// 暫停或排程外：不開始新項目
     var held: Bool { paused || outOfSchedule }
-    var scheduleEnabled: Bool { settings.nextScheduleStart() != nil }       // 有「每天開始時間」才能暫停到下次排程
+    var nextScheduleStart: Date? { settings.nextScheduleStart() }            // 沒有「每天開始時間」（永遠立即執行）＝nil
     private static let stamp: DateFormatter = {
         let f = DateFormatter(); f.dateFormat = "M/d HH:mm"; return f
     }()
     /// 目前為什麼沒在開始新項目（給畫面顯示）
     var holdNote: String {
+        if paused && resumeOnLaunch { return "暫停到下次打開 App 時繼續" }
         if paused { return resumeAt.map { "暫停到 \(Self.stamp.string(from: $0)) 自動繼續" } ?? "已永久暫停" }
         if outOfSchedule { return settings.nextScheduleStart().map { "排程外，\(Self.stamp.string(from: $0)) 開始" } ?? "排程外" }
         return ""
@@ -133,6 +135,7 @@ final class JobQueue: ObservableObject {
         let d = UserDefaults.standard
         d.set(paused, forKey: "queuePaused")
         d.set(resumeAt, forKey: "queueResumeAt")
+        d.set(resumeOnLaunch, forKey: "queueResumeOnLaunch")
     }
 
     /// 每 20 秒檢查：到了排程開始時間就自動繼續，排程時段開始時把等待中的項目叫起來
@@ -212,6 +215,7 @@ final class JobQueue: ObservableObject {
         let d = UserDefaults.standard
         var wasPaused = d.bool(forKey: "queuePaused")
         let until = d.object(forKey: "queueResumeAt") as? Date
+        if wasPaused, d.bool(forKey: "queueResumeOnLaunch") { wasPaused = false; paused = false; resumeAt = nil; resumeOnLaunch = false }   // 設定過「下次打開時繼續」
         if wasPaused, saved.isEmpty { paused = false; resumeAt = nil; wasPaused = false }
         guard !saved.isEmpty else { return }
         if wasPaused, let u = until, u <= Date() { wasPaused = false; paused = false; resumeAt = nil }   // 預定的繼續時間已過
@@ -494,19 +498,21 @@ final class JobQueue: ObservableObject {
         kick()
     }
 
-    /// untilSchedule＝暫停到下次排程時段開始；否則永久暫停（手動繼續）
-    func pause(untilSchedule: Bool = false) {
-        resumeAt = untilSchedule ? settings.nextScheduleStart() : nil
+    /// 暫停（手動繼續）；onNextLaunch＝關掉 App 後，下次打開時自動繼續
+    func pause(onNextLaunch: Bool = false) {
+        resumeAt = nil
+        resumeOnLaunch = onNextLaunch
         paused = true
-        log(resumeAt.map { "已暫停到下次排程（\(Self.stamp.string(from: $0))）：進行中的項目做完後不再開始新的" } ?? "已暫停：進行中的項目做完後不再開始新的")
+        log(onNextLaunch ? "已暫停：下次打開 App 時繼續，進行中的項目做完後不再開始新的" : "已暫停：進行中的項目做完後不再開始新的")
     }
     /// 推遲：暫停到指定時間，到點自動繼續（進行中的項目做完後停下）
     func pause(until date: Date) {
         resumeAt = date
+        resumeOnLaunch = false
         paused = true
         log("已暫停到 \(Self.stamp.string(from: date))：進行中的項目做完後不再開始新的")
     }
-    func resume() { paused = false; resumeAt = nil; log("繼續處理"); kick() }
+    func resume() { paused = false; resumeAt = nil; resumeOnLaunch = false; log("繼續處理"); kick() }
 
     /// 批量刪除勾選的項目（處理中的先取消）
     func removeChecked() {
