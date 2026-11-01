@@ -125,6 +125,7 @@ struct PipelineConfig {
     var outputDir = NSHomeDirectory() + "/Documents/PodDigest"
     var formats: Set<OutputFormat> = [.md, .html]
     var includeTranscript = false
+    var keepAudio = false
     var ytdlpPath = ""
     var ytdlpExtraArgs = ""
     var playlistWhenMixed = false
@@ -196,6 +197,7 @@ final class SettingsStore: ObservableObject {
     @Published var outputDir = "~/Documents/PodDigest" { didSet { changed() } }
     @Published var formats: Set<OutputFormat> = [.md, .html] { didSet { changed() } }
     @Published var includeTranscript = false { didSet { changed() } }
+    @Published var keepAudio = false { didSet { changed() } }
     // YouTube
     @Published var ytdlpExtraArgs = "" { didSet { changed() } }
     @Published var playlistWhenMixed = false { didSet { changed() } }
@@ -235,7 +237,7 @@ final class SettingsStore: ObservableObject {
          "outputLanguage": outputLanguage, "timestamps": String(timestamps), "customGenrePrompt": customGenrePrompt,
          "outputDir": outputDir.replacingOccurrences(of: NSHomeDirectory(), with: "~"),
          "formats": formats.map(\.rawValue).sorted().joined(separator: ","),
-         "includeTranscript": String(includeTranscript), "askEachTime": String(askEachTime), "batchMode": batchMode.rawValue, "notifyOnFinish": String(notifyOnFinish), "quitWhenDone": String(quitWhenDone), "ytdlpExtraArgs": ytdlpExtraArgs,
+         "includeTranscript": String(includeTranscript), "keepAudio": String(keepAudio), "askEachTime": String(askEachTime), "batchMode": batchMode.rawValue, "notifyOnFinish": String(notifyOnFinish), "quitWhenDone": String(quitWhenDone), "ytdlpExtraArgs": ytdlpExtraArgs,
          "playlistWhenMixed": String(playlistWhenMixed)]
     }
 
@@ -256,6 +258,7 @@ final class SettingsStore: ObservableObject {
         outputDir = s("outputDir", outputDir)
         if let f = v["formats"] { formats = Set(f.split(separator: ",").compactMap { OutputFormat(rawValue: String($0)) }) }
         includeTranscript = b("includeTranscript", includeTranscript)
+        keepAudio = b("keepAudio", keepAudio)
         askEachTime = b("askEachTime", askEachTime)
         batchMode = v["batchMode"].flatMap(BatchMode.init(rawValue:)) ?? batchMode
         notifyOnFinish = b("notifyOnFinish", notifyOnFinish)
@@ -332,7 +335,7 @@ final class SettingsStore: ObservableObject {
         c.chunkChars = max(2000, chunkChars); c.audioChunkMinutes = max(1, audioChunkMinutes)
         c.detail = detail; c.outputLanguage = outputLanguage; c.timestamps = timestamps
         c.extraPrompt = extraPrompt
-        c.outputDir = (outputDir as NSString).expandingTildeInPath; c.formats = formats; c.includeTranscript = includeTranscript
+        c.outputDir = (outputDir as NSString).expandingTildeInPath; c.formats = formats; c.includeTranscript = includeTranscript; c.keepAudio = keepAudio
         c.ytdlpPath = ytdlpPath; c.ytdlpExtraArgs = ytdlpExtraArgs; c.playlistWhenMixed = playlistWhenMixed
         return c
     }

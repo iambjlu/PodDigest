@@ -68,7 +68,7 @@ PodDigest/
 
 ### 3.2 `Views.swift`：介面
 `MainWindow` 是三個分頁：
-- **工作台** `WorkbenchView`：加入來源（拖放、檔案選擇、語音備忘錄、YouTube 連結）、內容類型／詳細程度／輸出格式選擇、佇列清單（`JobRow`）、右側 `JobDetail`（結果預覽、版本切換、即時逐字稿 `LiveView`、`OptionsEditor` 可在做完前改設定）。
+- **工作台** `WorkbenchView`：加入來源（拖放、檔案選擇、語音備忘錄、YouTube 連結）、內容類型／詳細程度／輸出格式選擇、佇列清單（`JobRow`，左邊有核取方塊；標題列有全選、刪除選取、暫停／繼續，清單按 Delete 鍵刪除勾選項，沒勾選則刪目前選取的）、右側 `JobDetail`（結果預覽、版本切換、即時逐字稿 `LiveView`、`OptionsEditor` 可在做完前改設定）。
 - **設定** `SettingsView`：STT／LLM 位址模型金鑰、連線測試、輸出、處理方式、同步資料夾、yt-dlp 更新、診斷模式開關。
 - **日誌** `LogView`：顯示 `queue.logs`。
 
@@ -84,6 +84,8 @@ PodDigest/
     - `.transcribeOnly`（`BatchMode.sttFirst` 且非再做一份）：只轉文字，存入 `job.transcript`，stage 設為 `.awaiting`、進度 0.55
     - `.finishOnly`：對 `.awaiting` 的項目用暫存逐字稿呼叫 `Pipeline.finish`
     - 再做一份（`regen`）：`Pipeline.regenerate`
+  - 全域暫停：`paused` 為真時排程迴圈不再取出新項目（進行中的做完為止）；暫停結束的迴圈不觸發 `onFinished`。`pause()`／`resume()` 切換。
+  - 批量刪除：`checked` 是清單左邊核取方塊勾選的項目 ID，`removeChecked()` 取消並移除全部勾選項。
   - 控制：`cancel`、`retry`、`retryAll`、`rerun`（沿用逐字稿再整理）、`retranscribe`（丟掉逐字稿重來）、`remove`、`clearFinished`、`cancelAll`。
   - `overallProgress`：未完成與已完成項目進度平均，給選單列顯示。
 - **佇列保存**：`SavedJob` 只含來源與選項（不含 API Key 與結果），`QueueStore` 存到 `~/Library/Application Support/PodDigest/queue.json`；全部做完（沒有待辦）就刪檔。`persistSoon()` 延遲 0.5 秒合併寫入，`persistNow()` 立即寫（結束 App 前呼叫）。`done`、`cancelled` 的項目不保存；處理中斷的會從頭再做。
@@ -96,7 +98,7 @@ PodDigest/
 `Pipeline` 的函式：
 - `run`：`transcribe` → `finish`。
 - `transcribe`：
-  1. 取得音訊：本地檔案直接用；`.files` 依序接成一份；`.remote` 用 `YouTube.download` 下載。
+  1. 取得音訊：本地檔案直接用；`.files` 依序接成一份；`.remote` 用 `YouTube.download` 下載；`cfg.keepAudio` 開啟時把下載的音訊直接移到輸出子資料夾（`Pipeline.outputDir`）保留，否則用完即刪。
   2. 切段：每個檔案呼叫 `AudioPrep.chunks`，多檔的時間軸（offset）接在一起，並在逐字稿插入「【第 n／m 段：檔名】」分隔。
   3. 逐段呼叫 `STTClient.transcribe`；有分句時間用 `Summarizer.timestampedLines`（約 30 秒一行），沒有就用 `paragraphs`（約 300 字一段）。可選帶上類型的 `sttHint` 與上一段結尾 60 字當提示詞。
   4. 驗證：沒有任何內容或少於 20 字會丟出錯誤。
@@ -154,6 +156,8 @@ PodDigest/
   - 儲存位置兩種：`local`（UserDefaults）／`folder`（同步資料夾的 `settings.json`，第一次執行有 iCloud Drive 就預設 `iCloud Drive/PodDigest`）。UserDefaults 永遠留一份本機副本。
   - `SettingsFile`：`values`（一般設定）與 `secrets`（只有「API Key 也存到資料夾」開啟才寫）。
   - 變動後延遲 0.8 秒存檔；`reloadIfChanged` 比對檔案修改時間，另一台電腦改過就重新讀取。
+  - `keepAudio`（保留下載的音訊）在工作台選項列與設定頁都有核取方塊。
+  - `playlistWhenMixed`（網址同時有影片和清單時處理整份清單）預設關閉；開啟時貼影片＋`list=` 的網址會展開成整份播放清單。
   - `ytdlpPath` 與儲存位置相關欄位每台電腦各自記住，不進同步檔。
   - 環境變數 `PD_STT_URL`、`PD_STT_MODEL`、`PD_LLM_URL`、`PD_LLM_MODEL`、`PD_OUT_DIR` 可覆蓋設定（測試用，不會存起來）。
 

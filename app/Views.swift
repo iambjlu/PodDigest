@@ -181,6 +181,8 @@ struct WorkbenchView: View {
                 }
                 Divider().frame(height: 14)
                 Toggle("重點後附逐字稿", isOn: $settings.includeTranscript).toggleStyle(.checkbox).font(.caption)
+                Toggle("保留下載的音訊", isOn: $settings.keepAudio).toggleStyle(.checkbox).font(.caption)
+                    .help("YouTube 連結下載的音訊，處理完後保留在輸出資料夾（與整理結果同一個子資料夾）；不勾選就用完即刪")
                 Toggle("每次都詢問", isOn: $settings.askEachTime).toggleStyle(.checkbox).font(.caption)
                     .help("每次加入檔案或連結前，先跳出視窗確認內容類型、詳細程度與輸出格式")
                 if settings.formats.isEmpty { Text("未勾選＝只在視窗顯示").font(.caption).foregroundStyle(.orange) }
@@ -246,6 +248,21 @@ struct WorkbenchView: View {
                 .menuStyle(.borderlessButton).fixedSize()
                 .help("多個音檔時的處理方式：\n" + settings.batchMode.detail)
                 Spacer()
+                if !queue.checked.isEmpty {
+                    Button("刪除選取（\(queue.checked.count)）", role: .destructive) { queue.removeChecked() }
+                        .buttonStyle(.borderless).font(.caption)
+                }
+                Button(queue.checked.count == queue.jobs.count && !queue.jobs.isEmpty ? "取消全選" : "全選") {
+                    queue.checked = queue.checked.count == queue.jobs.count ? [] : Set(queue.jobs.map(\.id))
+                }
+                .buttonStyle(.borderless).font(.caption).disabled(queue.jobs.isEmpty)
+                if queue.isBusy || queue.pending > 0 || queue.paused {
+                    Button { queue.paused ? queue.resume() : queue.pause() } label: {
+                        Label(queue.paused ? "繼續" : "暫停", systemImage: queue.paused ? "play.fill" : "pause.fill")
+                    }
+                    .buttonStyle(.borderless).font(.caption)
+                    .help(queue.paused ? "繼續處理排隊中的項目" : "暫停：進行中的項目做完後，不再開始新的項目")
+                }
                 if queue.isBusy || queue.pending > 0 {
                     Button("全部停止") { queue.cancelAll() }.buttonStyle(.borderless).font(.caption)
                 }
@@ -266,6 +283,12 @@ struct WorkbenchView: View {
                                 .onTapGesture { queue.selection = job.id }
                         }
                     }
+                }
+                .focusable()
+                .focusEffectDisabled()
+                .onDeleteCommand {      // 按 Delete：刪除勾選的項目（沒勾選就刪目前選取的）
+                    if !queue.checked.isEmpty { queue.removeChecked() }
+                    else if let j = queue.jobs.first(where: { $0.id == queue.selection }) { queue.remove(j) }
                 }
             }
         }
@@ -662,6 +685,9 @@ struct JobRow: View {
     var body: some View {
         let tint = job.stage.color
         HStack(spacing: 10) {
+            Toggle("", isOn: Binding(get: { queue.checked.contains(job.id) },
+                                     set: { if $0 { queue.checked.insert(job.id) } else { queue.checked.remove(job.id) } }))
+                .toggleStyle(.checkbox).labelsHidden().help("勾選後可批量刪除（按 Delete 鍵或「刪除選取」）")
             Image(systemName: job.sourceIcon)
                 .font(.system(size: 13, weight: .semibold)).foregroundStyle(tint)
                 .frame(width: 28, height: 28)
@@ -1080,6 +1106,7 @@ struct SettingsView: View {
                     Text("⚠️ 沒有勾選任何格式，處理完只會顯示在視窗內，不會存檔。").font(.caption).foregroundStyle(.orange)
                 }
                 Toggle("在重點後面附上逐字稿（Markdown／HTML／PDF／重點 TXT）", isOn: $settings.includeTranscript)
+                Toggle("保留下載的音訊（YouTube 連結，存在輸出子資料夾內）", isOn: $settings.keepAudio)
             }
             Section("YouTube") {
                 let found = Tool.find("yt-dlp", custom: settings.ytdlpPath)
@@ -1250,6 +1277,11 @@ struct MenuContent: View {
                     NSApp.activate(ignoringOtherApps: true)
                     openWindow(id: "main")
                 } label: { Label("主視窗", systemImage: "macwindow") }
+                if queue.isBusy || queue.pending > 0 || queue.paused {
+                    Button { queue.paused ? queue.resume() : queue.pause() } label: {
+                        Label(queue.paused ? "繼續" : "暫停", systemImage: queue.paused ? "play.circle" : "pause.circle")
+                    }
+                }
                 Button { queue.cancelAll() } label: { Label("全部停止", systemImage: "stop.circle") }
                 Spacer()
                 Button { NSApp.terminate(nil) } label: { Label("結束", systemImage: "power") }

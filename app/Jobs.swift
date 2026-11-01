@@ -91,6 +91,8 @@ final class JobQueue: ObservableObject {
     @Published var message = ""          // 加入連結時的提示（展開中、錯誤）
     @Published var expanding = false
     @Published var selection: UUID?
+    @Published var paused = false        // 全域暫停：不再開始新項目（進行中的做完）
+    @Published var checked = Set<UUID>() // 清單左邊核取方塊勾選的項目（批量刪除用）
     @Published var lingering = false     // 做完後視窗已關、App 留在選單列待命
 
     var onFinished: ((_ done: Int, _ failed: Int) -> Void)?     // 佇列全部做完時（給選單列／通知用）
@@ -240,6 +242,7 @@ final class JobQueue: ObservableObject {
         runner = Task { [weak self] in
             // 先把排隊的處理完（分階段模式＝只轉文字），再回頭做「等待整理」的
             while let self {
+                if self.paused { break }
                 if let job = self.jobs.first(where: { $0.stage == .queued }) {
                     await self.process(job, phase: self.settings.batchMode == .sttFirst && !(job.regen && !job.versions.isEmpty) ? .transcribeOnly : .full)
                 } else if let job = self.jobs.first(where: { $0.stage == .awaiting }) {
@@ -249,6 +252,7 @@ final class JobQueue: ObservableObject {
             guard let self else { return }
             self.runner = nil
             self.persistNow()
+            if self.paused { return }       // 暫停不算做完，不觸發完成通知／自動結束
             self.onFinished?(self.runDone, self.runFailed)
         }
     }
@@ -353,6 +357,19 @@ final class JobQueue: ObservableObject {
         kick()
     }
 
+    func pause() { paused = true; log("已暫停：進行中的項目做完後不再開始新的") }
+    func resume() { paused = false; log("繼續處理"); kick() }
+
+    /// 批量刪除勾選的項目（處理中的先取消）
+    func removeChecked() {
+        let ids = checked
+        for j in jobs where ids.contains(j.id) { cancel(j) }
+        jobs.removeAll { ids.contains($0.id) }
+        if let s = selection, ids.contains(s) { selection = nil }
+        checked = []
+        persistSoon()
+    }
+
     func cancel(_ job: Job) {
         if current?.job === job { current?.task.cancel() }
         else if job.stage.pending { job.stage = .cancelled }
@@ -387,12 +404,14 @@ final class JobQueue: ObservableObject {
     func remove(_ job: Job) {
         cancel(job)
         jobs.removeAll { $0 === job }
+        checked.remove(job.id)
         if selection == job.id { selection = nil }
         persistSoon()
     }
 
     func clearFinished() {
         jobs.removeAll { [.done, .cancelled, .failed].contains($0.stage) }
+        checked.formIntersection(jobs.map(\.id))
         if let s = selection, !jobs.contains(where: { $0.id == s }) { selection = nil }
         persistSoon()
     }

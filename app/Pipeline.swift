@@ -100,7 +100,19 @@ enum Pipeline {
         case .remote(let link):
             report(.downloading, 0, "下載音訊…")
             log("下載 \(link)")
-            audios = [try await YouTube.download(link, to: tmp, cfg: cfg) { report(.downloading, $0 * 0.08, "下載音訊 \(Int($0 * 100))%") }]
+            var dl = try await YouTube.download(link, to: tmp, cfg: cfg) { report(.downloading, $0 * 0.08, "下載音訊 \(Int($0 * 100))%") }
+            if cfg.keepAudio {      // 勾了「保留下載的音訊」：直接放進輸出資料夾，不另外複製一份
+                let dir = outputDir(input, cfg)
+                let dst = dir.appendingPathComponent(Exporter.safeName(input.title) + "." + dl.pathExtension)
+                do {
+                    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+                    try? FileManager.default.removeItem(at: dst)
+                    try FileManager.default.moveItem(at: dl, to: dst)
+                    dl = dst
+                    log("已保留音訊：\(dst.lastPathComponent)")
+                } catch { log("保留音訊失敗：\(error.localizedDescription)") }
+            }
+            audios = [dl]
             sourceLabel = link
         }
 
@@ -195,12 +207,17 @@ enum Pipeline {
                    ("來源", sourceLabel), ("整理時間", df.string(from: Date())),
                    ("語音模型", cfg.sttModel), ("LLM", cfg.llmModel.isEmpty ? "（伺服器預設）" : cfg.llmModel)],
             body: body, transcript: lines, includeTranscript: cfg.includeTranscript)
-        var dir = URL(fileURLWithPath: (cfg.outputDir as NSString).expandingTildeInPath)
-        if let f = input.folder, !f.isEmpty { dir.appendPathComponent(Exporter.safeName(f)) }
-        dir.appendPathComponent(Exporter.safeName(input.title))       // 每個音檔一個子資料夾，檔案不會散在一起
+        let dir = outputDir(input, cfg)
         let files = try await Exporter.write(doc, formats: o2.formats, dir: dir)
         report(.done, 1, "完成")
         return PipelineOutput(transcript: lines, body: body, duration: duration, files: files, doc: doc)
+    }
+
+    /// 輸出資料夾：[播放清單/]標題（每個音檔一個子資料夾，檔案不會散在一起）
+    static func outputDir(_ input: JobInput, _ cfg: PipelineConfig) -> URL {
+        var dir = URL(fileURLWithPath: (cfg.outputDir as NSString).expandingTildeInPath)
+        if let f = input.folder, !f.isEmpty { dir.appendPathComponent(Exporter.safeName(f)) }
+        return dir.appendingPathComponent(Exporter.safeName(input.title))
     }
 
     static func stripStamp(_ s: String) -> String {
