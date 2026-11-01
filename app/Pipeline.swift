@@ -223,9 +223,9 @@ enum Pipeline {
             report(.summarizing, base + (0.95 - base) * f, msg)
         }
 
-        // 標題：沿用指定的（再做一份時沿用上一版）；本地檔案／語音備忘錄開了「自動命名」就請 LLM 依內容取一個
+        // 標題：沿用指定的（再做一份時沿用上一版）；開了「自動命名」就請 LLM 依內容取一個，並在後面保留原標題
         var docTitle = title ?? input.title
-        if title == nil, cfg.autoTitle, input.source.isLocal {
+        if title == nil, cfg.autoTitle {
             report(.summarizing, 0.94, "產生標題…")
             if let t = await Summarizer.makeTitle(original: input.title, body: body, cfg: c) { docTitle = withOriginal(t, input.title) }
         }
