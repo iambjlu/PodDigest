@@ -25,7 +25,7 @@ PodDigest/
 ├── tools/
 │   ├── selftest.swift      不開 UI 的端對端測試
 │   └── make_icon.swift     產生 App 圖示 PNG
-├── docs/screenshot.png     README 用的工作台截圖
+├── docs/                   README 用的截圖（progress／preview／output）
 ├── vendor/yt-dlp           內建的 yt-dlp 執行檔（打包進 App）
 ├── build_app.sh            編譯並打包 build/PodDigest.app
 ├── install_app.sh          編譯 → 結束舊版 → 換掉 /Applications/PodDigest.app → 開啟
