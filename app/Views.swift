@@ -133,9 +133,6 @@ struct WorkbenchView: View {
                 Text("音訊／YouTube → 重點整理（Markdown、HTML、PDF）").font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
-            if queue.isBusy || queue.pending > 0 || queue.paused {
-                PauseControl(queue: queue, prominent: true)
-            }
             if queue.outOfSchedule && !queue.paused && (queue.pending > 0 || queue.isBusy) {
                 Button { queue.runNow() } label: { Label("立即執行", systemImage: "bolt.fill") }
                     .buttonStyle(.bordered).controlSize(.small).help("不等排程，現在就開始處理，做完為止")
@@ -148,6 +145,9 @@ struct WorkbenchView: View {
                 StatusPill(text: "排隊 \(queue.pending)", color: .gray)
             } else {
                 StatusPill(text: "待命", color: .green)
+            }
+            if queue.isBusy || queue.pending > 0 || queue.paused {
+                PauseControl(queue: queue, prominent: true)
             }
         }
     }
@@ -1390,25 +1390,35 @@ struct PauseControl: View {
     @State private var showDelay = false
     @State private var delayMode = true          // true＝一段時間，false＝到指定時間
 
-    var body: some View {
+    @ViewBuilder private var items: some View {
         if queue.paused {
             Button { queue.resume() } label: { Label("繼續", systemImage: "play.fill") }
-                .modifier(PauseStyle(prominent: prominent, color: .green))
-                .help("繼續處理排隊中的項目（\(queue.holdNote)）")
-        } else {
-            Menu {
-                Button { queue.pause() } label: { Label("暫停", systemImage: "pause.fill") }
-                Button { queue.pause(onNextLaunch: true) } label: { Label("暫停：下次打開 App 時繼續", systemImage: "power") }
-                Button { if let t = queue.nextScheduleStart { queue.pause(until: t) } } label: { Label("暫停：下次排程時間繼續", systemImage: "calendar.badge.clock") }
-                    .disabled(queue.nextScheduleStart == nil)
-                Button { delayMode = true; showDelay = true } label: { Label("暫停：一段時間…", systemImage: "timer") }
-                Button { delayMode = false; showDelay = true } label: { Label("暫停：到指定時間繼續…", systemImage: "clock.arrow.circlepath") }
-            } label: { Label("全部暫停", systemImage: "pause.fill") }
-            .modifier(PauseStyle(prominent: prominent, color: .orange))
-            .fixedSize()
-            .sheet(isPresented: $showDelay) { DelaySheet(queue: queue, byDuration: delayMode) }
-            .help("暫停：進行中的項目做完後，不再開始新的項目" + (queue.nextScheduleStart != nil ? "" : "（設定頁排程選「每天自動開始…」後，才能選「暫停：下次排程時間繼續」）"))
+            Divider()
         }
+        Button { queue.pause() } label: { Label(queue.paused ? "改為：暫停（手動繼續）" : "暫停", systemImage: "pause.fill") }
+        Button { queue.pause(onNextLaunch: true) } label: { Label("暫停：下次打開 App 時繼續", systemImage: "power") }
+        Button { if let t = queue.nextScheduleStart { queue.pause(until: t) } } label: { Label("暫停：下次排程時間繼續", systemImage: "calendar.badge.clock") }
+            .disabled(queue.nextScheduleStart == nil)
+        Button { delayMode = true; showDelay = true } label: { Label("暫停：一段時間…", systemImage: "timer") }
+        Button { delayMode = false; showDelay = true } label: { Label("暫停：到指定時間繼續…", systemImage: "clock.arrow.circlepath") }
+    }
+
+    var body: some View {
+        // 同一個控制項：沒暫停時是「全部暫停」下拉；暫停中是「已暫停」下拉（第一項繼續，其餘可改暫停方式）
+        Group {
+            if queue.paused {
+                Menu { items } label: { Label("已暫停", systemImage: "pause.circle.fill") }
+                    .modifier(PauseStyle(prominent: prominent, color: .orange))
+                    .help("\(queue.holdNote)；展開選單可繼續或修改暫停時間")
+            } else {
+                Menu { items } label: { Label("全部暫停", systemImage: "pause.fill") }
+                    .modifier(PauseStyle(prominent: prominent, color: .orange))
+                    .help("暫停：進行中的項目做完後，不再開始新的項目" + (queue.nextScheduleStart != nil ? "" : "（設定頁排程選「每天自動開始…」後，才能選「暫停：下次排程時間繼續」）"))
+            }
+        }
+        .frame(width: prominent ? 112 : nil)        // 固定寬度：不隨文字或左邊標籤長度跳動
+        .fixedSize(horizontal: !prominent, vertical: false)
+        .sheet(isPresented: $showDelay) { DelaySheet(queue: queue, byDuration: delayMode) }
     }
 }
 
