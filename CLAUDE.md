@@ -26,7 +26,7 @@
 
 - 說明有沒有需要重新編譯、需不需要重新開 App（只改文件、`tools/` 以外的非程式檔則不需要）
 - 改完 `app/` 底下的程式後，直接在專案目錄執行 `./install_app.sh`（呼叫 `build_app.sh` 編譯成 `build/PodDigest.app`、結束執行中的舊版、換掉 `/Applications/PodDigest.app` 並重新開啟），不必先詢問；沒做完的佇列項目存在 `~/Library/Application Support/PodDigest/queue.json`，重開後會自動接續。完成後確認 PodDigest 行程有在運行（`pgrep -x PodDigest`）
-- 編譯失敗時錯誤在 `build/.build.log`，修正後重新編譯，確認沒有錯誤。如果舊版 App 結束不了，先手動結束再重新執行 `./install_app.sh`
+- 編譯失敗時錯誤在 `build/.build.log`，修正後重新編譯，確認沒有錯誤。如果舊版 App 結束不了（例如停在「上次結束時是暫停狀態」之類的對話框、或被確認視窗擋住），直接強制結束（`pkill -9 -x PodDigest`）再重新執行 `./install_app.sh`，不必詢問使用者、不要等使用者手動按確認
 - 如果改到流程相關的檔案（`Pipeline`、`Summarizer`、`Net`、`Media`、`Exporter`），可用 `tools/selftest.swift` 做不開 UI 的端對端測試（編譯指令與用法在檔頭）
 - 如果是參考md進行的任務，請在最後回頭檢視各項任務是否皆已確實完成或是有無新的任務(如有要求做完打✅，則先重新讀取有無新內容再打✅)
 
