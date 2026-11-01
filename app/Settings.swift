@@ -302,8 +302,13 @@ final class SettingsStore: ObservableObject {
         notifyOnFinish = b("notifyOnFinish", notifyOnFinish)
         quitWhenDone = b("quitWhenDone", quitWhenDone)
         scheduleMode = v["scheduleMode"].flatMap(ScheduleMode.init(rawValue:)) ?? scheduleMode
-        scheduleStart = s("scheduleStart", scheduleStart)
-        scheduleEnd = s("scheduleEnd", scheduleEnd)
+        // 時間要是 HH:mm；舊版存的是分鐘數（例如 1380），格式不對就用預設值
+        func hhmm(_ k: String, _ cur: String) -> String {
+            guard let t = v[k], t.range(of: #"^\d{1,2}:\d{2}$"#, options: .regularExpression) != nil else { return cur }
+            return t
+        }
+        scheduleStart = hhmm("scheduleStart", scheduleStart)
+        scheduleEnd = hhmm("scheduleEnd", scheduleEnd)
         ytdlpExtraArgs = s("ytdlpExtraArgs", ytdlpExtraArgs)
     }
 

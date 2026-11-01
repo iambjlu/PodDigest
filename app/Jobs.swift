@@ -215,15 +215,7 @@ final class JobQueue: ObservableObject {
         if wasPaused, saved.isEmpty { paused = false; resumeAt = nil; wasPaused = false }
         guard !saved.isEmpty else { return }
         if wasPaused, let u = until, u <= Date() { wasPaused = false; paused = false; resumeAt = nil }   // 預定的繼續時間已過
-        if wasPaused {
-            paused = true; resumeAt = until
-            let a = NSAlert()
-            a.messageText = "上次結束時佇列是暫停狀態"
-            a.informativeText = "有 \(saved.count) 個項目還沒做完。要繼續處理，還是保持暫停？" + (until.map { "\n（原本設定暫停到 \($0.formatted(date: .abbreviated, time: .shortened))）" } ?? "")
-            a.addButton(withTitle: "保持暫停")
-            a.addButton(withTitle: "繼續處理")
-            if a.runModal() == .alertSecondButtonReturn { paused = false; resumeAt = nil }
-        }
+        if wasPaused { paused = true; resumeAt = until }     // 先維持暫停，項目還原後再問
         for sj in saved {
             var cfg = settings.config(extraPrompt: sj.extra)
             cfg.detail = DetailLevel(rawValue: sj.detail) ?? cfg.detail
@@ -232,6 +224,14 @@ final class JobQueue: ObservableObject {
                 ? (sj.paths.map { ps in .remotes(ps.enumerated().map { RemoteItem(id: "", title: sj.partTitles?[safe: $0.offset] ?? $0.element, url: $0.element, playlist: nil) }) } ?? .remote(sj.value))
                 : (sj.paths.map { .files($0.map { URL(fileURLWithPath: $0) }) } ?? .file(URL(fileURLWithPath: sj.value)))
             jobs.append(Job(input: JobInput(title: sj.title, source: src, genre: Genre.find(sj.genreID), custom: sj.custom, folder: sj.folder), cfg: cfg))
+        }
+        if wasPaused {
+            let a = NSAlert()
+            a.messageText = "上次結束時佇列是暫停狀態"
+            a.informativeText = "有 \(saved.count) 個項目還沒做完。要繼續處理，還是保持暫停？" + (until.map { "\n（原本設定暫停到 \($0.formatted(date: .abbreviated, time: .shortened))）" } ?? "")
+            a.addButton(withTitle: "保持暫停")
+            a.addButton(withTitle: "繼續處理")
+            if a.runModal() == .alertSecondButtonReturn { paused = false; resumeAt = nil }
         }
         log("接續上次未完成的 \(saved.count) 個項目")
         kick()

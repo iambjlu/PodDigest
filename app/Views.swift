@@ -229,8 +229,8 @@ struct WorkbenchView: View {
 
     private var jobList: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text("佇列（\(queue.jobs.count)）").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            HStack(spacing: 8) {
+                Text("佇列（\(queue.jobs.count)）").font(.caption.weight(.semibold)).foregroundStyle(.secondary).lineLimit(1).fixedSize()
                 Menu {
                     Picker("處理方式", selection: $settings.batchMode) {
                         ForEach(BatchMode.allCases) { Text($0.label).tag($0) }
@@ -243,27 +243,27 @@ struct WorkbenchView: View {
                 }
                 .menuStyle(.borderlessButton).fixedSize()
                 .help("多個音檔時的處理方式：\n" + settings.batchMode.detail)
-                Spacer()
-                if !queue.checked.isEmpty {
-                    Button("刪除選取（\(queue.checked.count)）", role: .destructive) { queue.removeChecked() }
-                        .buttonStyle(.borderless).font(.caption)
-                }
+                Spacer(minLength: 0)
+            }
+            HStack(spacing: 10) {
                 Button(queue.checked.count == queue.jobs.count && !queue.jobs.isEmpty ? "取消全選" : "全選") {
                     queue.checked = queue.checked.count == queue.jobs.count ? [] : Set(queue.jobs.map(\.id))
                 }
-                .buttonStyle(.borderless).font(.caption).disabled(queue.jobs.isEmpty)
-                if queue.isBusy || queue.pending > 0 || queue.paused {
-                    PauseControl(queue: queue, prominent: false)
+                .disabled(queue.jobs.isEmpty)
+                if !queue.checked.isEmpty {
+                    Button("刪除選取（\(queue.checked.count)）", role: .destructive) { queue.removeChecked() }
                 }
                 if queue.isBusy || queue.pending > 0 {
-                    Button("全部停止") { queue.cancelAll() }.buttonStyle(.borderless).font(.caption)
+                    Button("全部停止") { queue.cancelAll() }
                 }
                 if queue.retryable > 0 {
-                    Button("全部重試（\(queue.retryable)）") { queue.retryAll() }.buttonStyle(.borderless).font(.caption)
+                    Button("全部重試（\(queue.retryable)）") { queue.retryAll() }
                 }
-                Button("清除已結束") { queue.clearFinished() }.buttonStyle(.borderless).font(.caption)
+                Button("清除已結束") { queue.clearFinished() }
                     .disabled(!queue.jobs.contains { !$0.stage.running && !$0.stage.pending })
+                Spacer(minLength: 0)
             }
+            .buttonStyle(.borderless).font(.caption).lineLimit(1).fixedSize(horizontal: true, vertical: false)
             if queue.jobs.isEmpty {
                 Text("還沒有項目。加入檔案或貼上連結後會自動開始。").font(.callout).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
