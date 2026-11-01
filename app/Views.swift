@@ -1395,8 +1395,13 @@ struct PauseControl: View {
             Button { queue.resume() } label: { Label("繼續", systemImage: "play.fill") }
             Divider()
         }
-        Button { queue.pause() } label: { Label(queue.paused ? "改為：暫停（手動繼續）" : "暫停", systemImage: "pause.fill") }
-        Button { queue.pause(onNextLaunch: true) } label: { Label("暫停：下次打開 App 時繼續", systemImage: "power") }
+        let manual = queue.paused && queue.resumeAt == nil && !queue.resumeOnLaunch      // 目前就是「手動繼續」的暫停
+        if !manual {
+            Button { queue.pause() } label: { Label(queue.paused ? "暫停：手動繼續" : "暫停", systemImage: "pause.fill") }
+        }
+        if !(queue.paused && queue.resumeOnLaunch) {
+            Button { queue.pause(onNextLaunch: true) } label: { Label("暫停：下次打開 App 時繼續", systemImage: "power") }
+        }
         if let t = queue.nextScheduleStart {       // 沒設定排程時整項不出現
             Button { queue.pause(until: t) } label: { Label("暫停：下次排程時間繼續", systemImage: "calendar.badge.clock") }
         }
