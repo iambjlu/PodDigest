@@ -15,7 +15,8 @@ struct SavedJob: Codable {
     var extra: String
     var detail: String
     var formats: [String]
-    var paths: [String]? = nil      // 合併多個檔案時的完整清單
+    var paths: [String]? = nil      // 合併多個檔案（或多部影片）時的完整清單
+    var partTitles: [String]? = nil // 合併多部影片時各部的標題
 }
 
 enum QueueStore {
@@ -67,7 +68,7 @@ final class Job: ObservableObject, Identifiable {
     var sourceIcon: String {
         switch input.source {
         case .remote: return "play.rectangle.fill"
-        case .files: return "rectangle.stack.fill"
+        case .files, .remotes: return "rectangle.stack.fill"
         case .file: return "waveform"
         }
     }
@@ -127,14 +128,16 @@ final class JobQueue: ObservableObject {
             var remote = false
             var value = ""
             var paths: [String]? = nil
+            var partTitles: [String]? = nil
             switch j.input.source {
             case .file(let u): value = u.path
             case .files(let us): value = us.first?.path ?? ""; paths = us.map(\.path)
             case .remote(let l): remote = true; value = l
+            case .remotes(let its): remote = true; value = its.first?.url ?? ""; paths = its.map(\.url); partTitles = its.map(\.title)
             }
             return SavedJob(title: j.input.title, remote: remote, value: value, genreID: j.options.genre.id, custom: j.input.custom,
                             folder: j.input.folder, extra: j.options.extra, detail: j.options.detail.rawValue,
-                            formats: j.options.formats.map(\.rawValue), paths: paths)
+                            formats: j.options.formats.map(\.rawValue), paths: paths, partTitles: partTitles)
         }
         QueueStore.save(saved)
     }
@@ -148,7 +151,8 @@ final class JobQueue: ObservableObject {
             var cfg = settings.config(extraPrompt: sj.extra)
             cfg.detail = DetailLevel(rawValue: sj.detail) ?? cfg.detail
             cfg.formats = Set(sj.formats.compactMap(OutputFormat.init(rawValue:)))
-            let src: JobSource = sj.remote ? .remote(sj.value)
+            let src: JobSource = sj.remote
+                ? (sj.paths.map { ps in .remotes(ps.enumerated().map { RemoteItem(id: "", title: sj.partTitles?[safe: $0.offset] ?? $0.element, url: $0.element, playlist: nil) }) } ?? .remote(sj.value))
                 : (sj.paths.map { .files($0.map { URL(fileURLWithPath: $0) }) } ?? .file(URL(fileURLWithPath: sj.value)))
             jobs.append(Job(input: JobInput(title: sj.title, source: src, genre: Genre.find(sj.genreID), custom: sj.custom, folder: sj.folder), cfg: cfg))
         }
@@ -201,6 +205,15 @@ final class JobQueue: ObservableObject {
             jobs.append(Job(input: input, cfg: cfg))
         }
         message = "已加入 \(files.count) 個檔案"
+        persistSoon()
+        kick()
+    }
+
+    /// 多部影片接成一份（順序＝傳入順序）
+    func addMergedRemote(_ items: [RemoteItem], title: String, _ o: BatchOptions) {
+        let input = JobInput(title: title, source: .remotes(items), genre: o.genre, custom: settings.customGenrePrompt, folder: nil)
+        jobs.append(Job(input: input, cfg: config(o)))
+        message = "已加入 1 個合併項目（\(items.count) 部影片）"
         persistSoon()
         kick()
     }
@@ -465,4 +478,8 @@ final class JobQueue: ObservableObject {
         for j in jobs where j.stage.pending { j.stage = .cancelled }
         current?.task.cancel()
     }
+}
+
+private extension Array {
+    subscript(safe i: Int) -> Element? { indices.contains(i) ? self[i] : nil }
 }

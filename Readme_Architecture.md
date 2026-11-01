@@ -73,12 +73,12 @@ PodDigest/
 - **設定** `SettingsView`：STT／LLM 位址模型金鑰、連線測試、輸出、處理方式、同步資料夾、yt-dlp 更新、診斷模式開關。
 - **日誌** `LogView`：顯示 `queue.logs`。
 
-其他視圖：`AskSheet`（每次加入前詢問類型與格式；上方先預覽將加入的項目——檔案列檔名、連結先經 `JobQueue.expandLinks` 展開成影片標題，最多列 200 筆；展開完成前「加入並開始」停用，確認時直接用已展開的結果，不再重新解析；解析中可按「略過預覽直接開始」，改由背景解析後直接加入）、`MergeSheet`（多段錄音合併排序）、`VoiceMemosSheet`、`ConvertSheet`（轉換 Markdown）、`HTMLView`（WKWebView 預覽）、`ReadOnlyText`、`MenuContent`（選單列面板）。`AddRequest` 描述一次待確認的加入動作（files／links／merged）。
+合併：勾「多個檔案合併成一份」時，檔案走 `MergeSheet`；貼連結則先 `expandLinks` 解析（播放清單展開後一併合併），2 部以上才跳 `MergeSheet`（`MergeDraft.isRemote`）排序與取名，確認後以 `AddRequest.mergedRemote` 加入，只有 1 部就照一般流程。其他視圖：`AskSheet`（每次加入前詢問類型與格式；上方先預覽將加入的項目——檔案列檔名、連結先經 `JobQueue.expandLinks` 展開成影片標題，最多列 200 筆；展開完成前「加入並開始」停用，確認時直接用已展開的結果，不再重新解析；解析中可按「略過預覽直接開始」，改由背景解析後直接加入）、`MergeSheet`（多段錄音合併排序）、`VoiceMemosSheet`、`ConvertSheet`（轉換 Markdown）、`HTMLView`（WKWebView 預覽）、`ReadOnlyText`、`MenuContent`（選單列面板）。`AddRequest` 描述一次待確認的加入動作（files／links／merged）。
 
 ### 3.3 `Jobs.swift`：工作佇列
 - `Job`（`@MainActor ObservableObject`）：一個項目的狀態——`stage`、`progress`、`detail`、`versions`（每「再做一份」多一版，逐字稿共用）、`liveLines`（即時逐字稿，上限 400 行）、`jobLog`（上限 300 行）、`transcript`（分階段模式暫存）。`options` 變動會同步寫入 `OptionsBox`。
 - `JobQueue`：
-  - 加入：`addFiles`（逐檔一項）、`addMerged`（多檔接成一項）、連結分兩步：`expandLinks`（用 `YouTube.expand` 展開播放清單；連結去重、每批同時解析最多 4 個、重複的影片只留一個）與 `addRemote`（加入已展開的影片）；`addLinks` 是不經預覽時兩步合併的捷徑。
+  - 加入：`addFiles`（逐檔一項）、`addMerged`（多檔接成一項）、`addMergedRemote`（多部影片接成一項，來源 `.remotes`）、連結分兩步：`expandLinks`（用 `YouTube.expand` 展開播放清單；連結去重、每批同時解析最多 4 個、重複的影片只留一個）與 `addRemote`（加入已展開的影片）；`addLinks` 是不經預覽時兩步合併的捷徑。
   - 排程：`kick()` 啟動單一 `runner` 迴圈，**一次只處理一個項目**。優先取 `.queued`，沒有才取 `.awaiting`（`phase = .finishOnly`）。
   - `process(_:phase:)`：依 `Phase` 呼叫 `Pipeline`——
     - `.full`：`Pipeline.run`（轉文字 + 整理 + 輸出）
@@ -89,17 +89,17 @@ PodDigest/
   - 批量刪除：`checked` 是清單左邊核取方塊勾選的項目 ID，`removeChecked()` 取消並移除全部勾選項。
   - 控制：`cancel`、`retry`、`retryAll`、`rerun`（沿用逐字稿再整理）、`retranscribe`（丟掉逐字稿重來）、`remove`、`clearFinished`、`cancelAll`。
   - `overallProgress`：未完成與已完成項目進度平均，給選單列顯示。
-- **佇列保存**：`SavedJob` 只含來源與選項（不含 API Key 與結果），`QueueStore` 存到 `~/Library/Application Support/PodDigest/queue.json`；全部做完（沒有待辦）就刪檔。`persistSoon()` 延遲 0.5 秒合併寫入，`persistNow()` 立即寫（結束 App 前呼叫）。`done`、`cancelled` 的項目不保存；處理中斷的會從頭再做。
+- **佇列保存**：`SavedJob` 只含來源與選項（合併多部影片時 `paths` 存各部網址、`partTitles` 存標題）（不含 API Key 與結果），`QueueStore` 存到 `~/Library/Application Support/PodDigest/queue.json`；全部做完（沒有待辦）就刪檔。`persistSoon()` 延遲 0.5 秒合併寫入，`persistNow()` 立即寫（結束 App 前呼叫）。`done`、`cancelled` 的項目不保存；處理中斷的會從頭再做。
 
 ### 3.4 `Pipeline.swift`：單項流程（UI 無關，可獨立測試）
-型別：`JobSource`（`.file`／`.files`／`.remote`）、`Stage`（queued、awaiting、downloading、preparing、transcribing、summarizing、exporting、done、failed、cancelled；`pending`＝queued 或 awaiting，`running`＝中間五個）、`JobInput`、`BatchOptions`、`PipelineOutput`、`Transcript`、`Report`（進度回呼）。
+型別：`JobSource`（`.file`／`.files`／`.remote`／`.remotes`；`isLocal`／`isRemote` 區分來源）、`Stage`（queued、awaiting、downloading、preparing、transcribing、summarizing、exporting、done、failed、cancelled；`pending`＝queued 或 awaiting，`running`＝中間五個）、`JobInput`、`BatchOptions`、`PipelineOutput`、`Transcript`、`Report`（進度回呼）。
 
 `OptionsBox`：用鎖保護的 `BatchOptions` 容器。流程在**每個階段開始時才讀**，所以處理途中改類型、詳細程度、額外要求或輸出格式，還沒走到的階段會吃到新設定。
 
 `Pipeline` 的函式：
 - `run`：`transcribe` → `finish`。
 - `transcribe`：
-  1. 取得音訊：本地檔案直接用；`.files` 依序接成一份；`.remote` 用 `YouTube.download` 下載；`cfg.keepAudio` 開啟時把下載的音訊直接移到輸出子資料夾（`Pipeline.outputDir`）保留，否則用完即刪。
+  1. 取得音訊：本地檔案直接用；`.files` 依序接成一份；`.remote` 用 `YouTube.download` 下載；`.remotes`（多部影片合併）依序各自下載到 `dl<n>` 子資料夾，之後與 `.files` 同樣接成一份、在逐字稿插入各部標題；`cfg.keepAudio` 開啟時把下載的音訊直接移到輸出子資料夾（`Pipeline.outputDir`）保留，否則用完即刪。
   2. 切段：每個檔案呼叫 `AudioPrep.chunks`，多檔的時間軸（offset）接在一起，並在逐字稿插入「【第 n／m 段：檔名】」分隔。
   3. 逐段呼叫 `STTClient.transcribe`；有分句時間用 `Summarizer.timestampedLines`（約 30 秒一行），沒有就用 `paragraphs`（約 300 字一段）。可選帶上類型的 `sttHint` 與上一段結尾 60 字當提示詞。
   4. 驗證：沒有任何內容或少於 20 字會丟出錯誤。

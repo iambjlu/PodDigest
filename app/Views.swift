@@ -64,6 +64,7 @@ struct WorkbenchView: View {
     @State private var showConvert = false
     @State private var mergeOn = false
     @State private var pendingMerge: MergeDraft?
+    @State private var remoteMergeMap: [String: RemoteItem] = [:]     // 合併影片視窗用：網址 → 影片
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -101,7 +102,12 @@ struct WorkbenchView: View {
         }
         .sheet(item: $pendingMerge) { d in
             MergeSheet(draft: d) { urls, title in
-                DispatchQueue.main.async { request(.merged(urls, title)) }
+                if d.isRemote {
+                    let items = urls.compactMap { remoteMergeMap[$0.absoluteString] }
+                    DispatchQueue.main.async { request(.mergedRemote(items, title)) }
+                } else {
+                    DispatchQueue.main.async { request(.merged(urls, title)) }
+                }
             }
         }
         .sheet(isPresented: $showConvert) { ConvertSheet(settings: settings) }
@@ -338,7 +344,31 @@ struct WorkbenchView: View {
                 return
             }
         }
+        // 勾了「合併成一份」且貼了連結：先解析成影片清單，2 部以上就讓使用者排順序、取名字
+        if mergeOn, case .links(let text) = r.kind {
+            Task { await mergeLinks(text, r) }
+            return
+        }
         if settings.askEachTime { pending = r } else { perform(r, queue.options(extra: extra)) }
+    }
+
+    private func mergeLinks(_ text: String, _ r: AddRequest) async {
+        queue.expanding = true
+        queue.message = "解析連結中…"
+        let res = await queue.expandLinks(text)
+        queue.expanding = false
+        let items = res.groups.flatMap { $0 }
+        if let e = res.errors.last { queue.message = e }
+        if items.count > 1 {
+            remoteMergeMap = Dictionary(items.map { ($0.url, $0) }, uniquingKeysWith: { a, _ in a })
+            let urls = items.compactMap { URL(string: $0.url) }
+            queue.message = "已解析 \(items.count) 部影片，請確認合併順序"
+            pendingMerge = MergeDraft(urls: urls, names: Dictionary(urls.map { ($0, remoteMergeMap[$0.absoluteString]?.title ?? $0.absoluteString) }, uniquingKeysWith: { a, _ in a }),
+                                      title: "\(items[0].title)（合併 \(items.count) 部）", isRemote: true)
+        } else if !items.isEmpty {         // 只有一部：不用合併，照一般流程
+            queue.message = "只有 1 部影片，不需要合併"
+            if settings.askEachTime { pending = r } else { queue.addRemote(res.groups, queue.options(extra: extra)) }
+        }
     }
 
     private func perform(_ r: AddRequest, _ o: BatchOptions, _ groups: [[RemoteItem]]? = nil) {
@@ -347,6 +377,7 @@ struct WorkbenchView: View {
         case .links(let text):
             if let groups { queue.addRemote(groups, o) } else { queue.addLinks(text, o) }
         case .merged(let urls, let title): queue.addMerged(urls, title: title, o)
+        case .mergedRemote(let items, let title): queue.addMergedRemote(items, title: title, o)
         }
     }
 
@@ -370,17 +401,19 @@ struct WorkbenchView: View {
 }
 
 struct AddRequest: Identifiable {
-    enum Kind { case files([URL], [URL: String]), links(String), merged([URL], String) }
+    enum Kind { case files([URL], [URL: String]), links(String), merged([URL], String), mergedRemote([RemoteItem], String) }
     let id = UUID()
     let kind: Kind
     static func files(_ u: [URL], _ t: [URL: String]) -> AddRequest { AddRequest(kind: .files(u, t)) }
     static func links(_ s: String) -> AddRequest { AddRequest(kind: .links(s)) }
     static func merged(_ u: [URL], _ t: String) -> AddRequest { AddRequest(kind: .merged(u, t)) }
+    static func mergedRemote(_ i: [RemoteItem], _ t: String) -> AddRequest { AddRequest(kind: .mergedRemote(i, t)) }
     var summary: String {
         switch kind {
         case .files(let u, _): return "\(u.count) 個項目"
         case .links(let s): return "\(s.split(whereSeparator: { $0.isWhitespace }).count) 個連結"
         case .merged(let u, _): return "合併 \(u.count) 個檔案為 1 份"
+        case .mergedRemote(let i, _): return "合併 \(i.count) 部影片為 1 份"
         }
     }
 }
@@ -533,6 +566,7 @@ struct MergeDraft: Identifiable {
     var urls: [URL]
     var names: [URL: String]      // 語音備忘錄的標題
     var title: String
+    var isRemote = false          // 合併的是影片連結（不是本地檔案）
 }
 
 /// 合併多段錄音：調整順序、取名字
@@ -545,7 +579,7 @@ struct MergeSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("合併成一份（\(urls.count) 個檔案）").font(.headline)
+            Text("合併成一份（\(urls.count) \(draft.isRemote ? "部影片" : "個檔案")）").font(.headline)
             Text("依下面的順序接成一段長錄音，只會轉一次文字、整理一份重點。拖曳或用箭頭調整順序。")
                 .font(.caption).foregroundStyle(.secondary)
             TextField("標題", text: $title).textFieldStyle(.roundedBorder)
@@ -678,6 +712,8 @@ struct AskSheet: View {
             previewTitles = files.map { titles[$0] ?? $0.deletingPathExtension().lastPathComponent }
         case .merged(let urls, let title):
             previewTitles = ["合併為「\(title)」"] + urls.map { "　" + $0.lastPathComponent }
+        case .mergedRemote(let items, let title):
+            previewTitles = ["合併為「\(title)」"] + items.map { "　" + $0.title }
         case .links(let text):
             let r = await queue.expandLinks(text)
             groups = r.groups
@@ -904,7 +940,7 @@ struct LiveView: View {
 
     private static let steps: [(Stage, String)] = [(.downloading, "下載"), (.preparing, "處理音訊"), (.transcribing, "轉文字"),
                                                    (.summarizing, "整理重點"), (.exporting, "輸出")]
-    private var isRemote: Bool { if case .remote = job.input.source { return true }; return false }
+    private var isRemote: Bool { job.input.source.isRemote }
     private func stepIndex(_ s: Stage) -> Int { Self.steps.firstIndex { $0.0 == s } ?? -1 }
 
     /// 已經走過的階段不會再吃到新設定

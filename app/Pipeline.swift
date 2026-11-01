@@ -6,8 +6,10 @@ enum JobSource {
     case file(URL)
     case files([URL])          // 多段錄音依序接成一份
     case remote(String)
+    case remotes([RemoteItem])     // 多部影片依序下載後接成一份（例如分成好幾段的補課影片）
 
-    var isLocal: Bool { if case .remote = self { return false } else { return true } }
+    var isLocal: Bool { switch self { case .file, .files: return true; case .remote, .remotes: return false } }
+    var isRemote: Bool { !isLocal }
 }
 
 enum Stage: String {
@@ -93,29 +95,50 @@ enum Pipeline {
 
         // 1) 取得音訊（一個或多個檔案；多個檔案依順序接成一份）
         var audios: [URL]
+        var names: [String]                // 每個音訊的名稱，合併時用來在逐字稿插入分隔
         var sourceLabel: String
+        /// 勾了「保留下載的音訊」：直接放進輸出資料夾，不另外複製一份
+        func keep(_ dl: URL, as name: String) -> URL {
+            guard cfg.keepAudio else { return dl }
+            let dir = outputDir(input, cfg)
+            let dst = dir.appendingPathComponent(Exporter.safeName(name) + "." + dl.pathExtension)
+            do {
+                try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+                try? FileManager.default.removeItem(at: dst)
+                try FileManager.default.moveItem(at: dl, to: dst)
+                log("已保留音訊：\(dst.lastPathComponent)")
+                return dst
+            } catch { log("保留音訊失敗：\(error.localizedDescription)"); return dl }
+        }
         switch input.source {
         case .file(let u):
-            audios = [u]; sourceLabel = u.lastPathComponent
+            audios = [u]; names = [u.lastPathComponent]; sourceLabel = u.lastPathComponent
         case .files(let us):
-            audios = us; sourceLabel = "合併 \(us.count) 個檔案：" + us.map(\.lastPathComponent).joined(separator: " ＋ ")
+            audios = us; names = us.map(\.lastPathComponent)
+            sourceLabel = "合併 \(us.count) 個檔案：" + us.map(\.lastPathComponent).joined(separator: " ＋ ")
         case .remote(let link):
             report(.downloading, 0, "下載音訊…")
             log("下載 \(link)")
-            var dl = try await YouTube.download(link, to: tmp, cfg: cfg) { report(.downloading, $0 * 0.08, "下載音訊 \(Int($0 * 100))%") }
-            if cfg.keepAudio {      // 勾了「保留下載的音訊」：直接放進輸出資料夾，不另外複製一份
-                let dir = outputDir(input, cfg)
-                let dst = dir.appendingPathComponent(Exporter.safeName(input.title) + "." + dl.pathExtension)
-                do {
-                    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-                    try? FileManager.default.removeItem(at: dst)
-                    try FileManager.default.moveItem(at: dl, to: dst)
-                    dl = dst
-                    log("已保留音訊：\(dst.lastPathComponent)")
-                } catch { log("保留音訊失敗：\(error.localizedDescription)") }
-            }
-            audios = [dl]
+            let dl = try await YouTube.download(link, to: tmp, cfg: cfg) { report(.downloading, $0 * 0.08, "下載音訊 \(Int($0 * 100))%") }
+            audios = [keep(dl, as: input.title)]
+            names = [input.title]
             sourceLabel = link
+        case .remotes(let items):
+            let n = Double(items.count)
+            audios = []; names = []
+            for (i, it) in items.enumerated() {
+                try Task.checkCancellation()
+                let sub = tmp.appendingPathComponent("dl\(i)")
+                try FileManager.default.createDirectory(at: sub, withIntermediateDirectories: true)
+                report(.downloading, 0.08 * Double(i) / n, "下載音訊 \(i + 1)/\(items.count)…")
+                log("下載 \(it.url)")
+                let dl = try await YouTube.download(it.url, to: sub, cfg: cfg) {
+                    report(.downloading, 0.08 * (Double(i) + $0) / n, "下載音訊 \(i + 1)/\(items.count) \(Int($0 * 100))%")
+                }
+                audios.append(keep(dl, as: "\(i + 1)-" + it.title))
+                names.append(it.title)
+            }
+            sourceLabel = "合併 \(items.count) 部影片：" + items.map(\.url).joined(separator: " ＋ ")
         }
 
         // 2) 切段（多個檔案的時間軸接在一起）
@@ -131,7 +154,7 @@ enum Pipeline {
             let prepared = try await AudioPrep.chunks(of: a, minutes: cfg.audioChunkMinutes, tmp: sub) { f in
                 report(.preparing, 0.08 + 0.04 * (Double(i) + f) / Double(audios.count), label)
             }
-            if audios.count > 1 { starts[duration] = a.lastPathComponent }
+            if audios.count > 1 { starts[duration] = names[i] }
             allChunks += prepared.chunks.map { AudioChunk(url: $0.url, offset: $0.offset + duration) }
             duration += prepared.duration
         }
