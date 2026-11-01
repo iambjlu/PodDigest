@@ -190,7 +190,7 @@ struct MenuLabel: View {
     var body: some View {
         if queue.isBusy || queue.pending > 0 {
             HStack(spacing: 4) {
-                Image(systemName: queue.paused ? "pause.fill" : "waveform")
+                Image(systemName: queue.held ? "pause.fill" : "waveform")
                 Text("\(Int(queue.overallProgress * 100))%").monospacedDigit()
             }
         } else {

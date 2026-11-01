@@ -85,7 +85,7 @@ PodDigest/
     - `.transcribeOnly`（`BatchMode.sttFirst` 且非再做一份）：只轉文字，存入 `job.transcript`，stage 設為 `.awaiting`、進度 0.55
     - `.finishOnly`：對 `.awaiting` 的項目用暫存逐字稿呼叫 `Pipeline.finish`
     - 再做一份（`regen`）：`Pipeline.regenerate`
-  - 全域暫停：`paused` 為真時排程迴圈不再取出新項目（進行中的做完為止）；暫停結束的迴圈不觸發 `onFinished`。`pause()`／`resume()` 切換。暫停時 UI 改為橘色「暫停中／已暫停」樣式（標題列標籤、`JobRow`、`JobDetail`、選單列面板與圖示），並說明進行中的項目做完後才停下，避免進度看起來像當掉。
+  - 全域暫停：`paused` 為真時排程迴圈不再取出新項目（進行中的做完為止）；暫停結束的迴圈不觸發 `onFinished`。`pause()`／`resume()` 切換。暫停分「永久暫停」與「暫停到下次排程」（`resumeAt`，到時間由 20 秒計時器 `tick()` 自動繼續）；暫停狀態存在 UserDefaults（`queuePaused`／`queueResumeAt`），重開 App 時若有待辦項目，會先維持暫停並跳視窗問「保持暫停／繼續處理」，回答前不會開始處理。排程（`SettingsStore.scheduleEnabled／scheduleStart／scheduleEnd／scheduleDays`，設定頁「排程」區，開始大於結束＝跨午夜）：不在時段內時 `outOfSchedule` 為真，`held = paused || outOfSchedule`，排程迴圈不開始新項目（進行中的做完），時段一到自動接續。暫停時 UI 改為橘色「暫停中／已暫停」樣式（標題列標籤、`JobRow`、`JobDetail`、選單列面板與圖示），並說明進行中的項目做完後才停下，避免進度看起來像當掉。
   - 批量刪除：`checked` 是清單左邊核取方塊勾選的項目 ID，`removeChecked()` 取消並移除全部勾選項。
   - 控制：`cancel`、`retry`、`retryAll`、`rerun`（沿用逐字稿再整理）、`retranscribe`（丟掉逐字稿重來）、`remove`、`clearFinished`、`cancelAll`。
   - `overallProgress`：未完成與已完成項目進度平均，給選單列顯示。
